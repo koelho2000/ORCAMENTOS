@@ -1,0 +1,1937 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateProfile, signInAnonymously } from 'firebase/auth';
+import { getFirestore, collection, addDoc, doc, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
+
+// --- Configuração do Firebase ---
+const firebaseConfig = {
+  apiKey: "AIzaSyC1rL-yNpFVOIoBiJp7s2MthPd3Iq8R1Wc",
+  authDomain: "k2000-orc.firebaseapp.com",
+  projectId: "k2000-orc",
+  storageBucket: "k2000-orc.appspot.com",
+  messagingSenderId: "558031739298",
+  appId: "1:558031739298:web:c816d59a2724e573bc3afb"
+};
+
+// --- Inicialização do Firebase ---
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// --- Dados da Aplicação (Constantes) ---
+const teamDistribution = {
+    avac: { 'Engenheiro Sénior': { rate: 60, percentage: 0.25 }, 'Técnico Projectista': { rate: 40, percentage: 0.40 }, 'Desenhador Projectista': { rate: 40, percentage: 0.25 }, 'Auxiliar Técnico': { rate: 25, percentage: 0.10 } },
+    'pre-certificado': { 'Engenheiro Sénior': { rate: 60, percentage: 0.40 }, 'Técnico Projectista': { rate: 40, percentage: 0.60 } },
+    certificado: { 'Engenheiro Sénior': { rate: 60, percentage: 0.70 }, 'Auxiliar Técnico': { rate: 25, percentage: 0.30 } }
+};
+const serviceCodes = {
+    'avac': 'AVC',
+    'pre-certificado': 'PCE',
+    'certificado': 'CER'
+};
+const data = {
+    locations: { "Aveiro": 255, "Beja": 177, "Braga": 365, "Bragança": 515, "Castelo Branco": 225, "Coimbra": 205, "Évora": 135, "Faro": 278, "Guarda": 315, "Leiria": 130, "Lisboa": 0, "Portalegre": 225, "Porto": 313, "Santarém": 80, "Setúbal": 50, "Viana do Castelo": 390, "Vila Real": 415, "Viseu": 290, "Açores": 750, "Madeira": 750 },
+    buildingTypes: { "Comércio": { "Loja de rua": 1.0, "Centro comercial": 1.25, "Supermercado / Hipermercado": 1.5, "Quiosque / Stand": 0.75, "Showroom": 1.25 }, "Escritórios": { "Escritórios administrativos": 1.0, "Escritórios técnicos / engenharia": 1.25, "Call center": 1.5, "Escritório co-working": 1.0 }, "Serviços": { "Balcão de atendimento": 1.0, "Bancos": 1.0, "Câmaras municipais": 1.25, "Correios": 1.0, "Serviços jurídicos / cartórios": 1.0 }, "Hotelaria e Restauração": { "Hotel 3★": 1.25, "Hotel 4★/5★": 1.5, "Hostel": 1.0, "Pousada": 1.25, "Restaurante": 1.25, "Bar / Cafetaria": 1.0, "Refeitório industrial": 1.5 }, "Ensino": { "Jardim de infância": 1.0, "Escola básica (1.º/2.º ciclo)": 1.0, "Escola secundária": 1.0, "Escola profissional / técnica": 1.25, "Universidade / Instituto Politécnico": 1.5, "Centros de formação": 1.0 }, "Saúde": { "Hospital público": 1.5, "Hospital privado": 2.0, "Clínica médica": 1.25, "Centro de saúde": 1.25, "Laboratório de análises": 2.0, "Unidade de hemodiálise": 2.0, "Farmácia": 1.25 }, "Desporto e Lazer": { "Ginásio / Health club": 1.0, "Piscina interior": 1.25, "Pavilhão desportivo": 1.25, "Estádio / Campo de jogos": 1.5, "SPA / Centro de bem-estar": 1.5, "Salão de jogos / Bingo": 1.0 }, "Cultura": { "Biblioteca": 1.0, "Auditório / Sala de espetáculos": 1.5, "Museu": 1.25, "Galeria de arte": 1.0, "Centro cultural": 1.25 }, "Transportes": { "Estação ferroviária": 1.5, "Estação rodoviária": 1.5, "Aeroporto": 2.0, "Interface intermodal": 1.5, "Parque de estacionamento coberto": 0.75 }, "Indústria e Armazéns": { "Indústria ligeira (montagem, embalamento)": 1.5, "Indústria pesada (metalomecânica, química)": 2.0, "Armazém logístico": 1.0, "Câmara frigorífica": 2.0, "Oficina de manutenção": 1.25, "Centro de distribuição": 1.25 } },
+    auxSpaces: { "Estacionamento": 1.0, "Áreas técnicas": 1.5, "Armazéns": 1.0, "Oficinas": 1.5, "Cozinha": 1.75, "Lavandaria": 1.25 }
+};
+const prices = {
+    mainTiers: { 
+        avac: { 2500: 4.0, 10000: 3.0, 25000: 2.5, 50000: 2.25, 'Infinity': 2.0 }, 
+        certificado: { 2500: 2.50, 4000: 2.25, 6000: 2.00, 7500: 1.75, 10000: 1.50, 15000: 1.25, 25000: 1.0, 50000: 0.75, 75000: 0.50, 'Infinity': 0.35 }, 
+        'pre-certificado': { 2500: 1.0, 10000: 0.75, 25000: 0.65, 50000: 0.50, 'Infinity': 0.35 } 
+    },
+    aux: { avac: 1, certificado: 0.5, "pre-certificado": 0.25 },
+    aux_floor: { avac: 0.5, certificado: 0.25, "pre-certificado": 0.10 }
+};
+const serviceTasks = {
+    avac: [
+        { 
+            name: 'Reunião inicial e levantamento de dados', 
+            percentage: 0.10,
+            details: [
+                'Análise do programa preliminar e/ou projeto de arquitetura.',
+                'Visita ao local para levantamento de condicionantes.',
+                'Recolha de dados de especialidades relevantes.'
+            ]
+        },
+        { 
+            name: 'Desenvolvimento do projeto base', 
+            percentage: 0.30,
+            details: [
+                'Definição das soluções e sistemas a adotar.',
+                'Pré-dimensionamento de equipamentos e redes.',
+                'Elaboração de memórias descritivas e justificativas.'
+            ]
+        },
+        { 
+            name: 'Cálculos e dimensionamento', 
+            percentage: 0.25,
+            details: [
+                'Cálculos de cargas térmicas.',
+                'Dimensionamento de redes de condutas e tubagens.',
+                'Seleção final de equipamentos.'
+            ]
+        },
+        { 
+            name: 'Desenho de peças e esquemas', 
+            percentage: 0.25,
+            details: [
+                'Desenho de plantas, cortes e pormenores.',
+                'Elaboração de esquemas de princípio.',
+                'Coordenação com outras especialidades.'
+            ]
+        },
+        { 
+            name: 'Revisão final e entrega', 
+            percentage: 0.10,
+            details: [
+                'Compilação de todas as peças do projeto.',
+                'Verificação de conformidade e qualidade.',
+                'Emissão e entrega da versão final.'
+            ]
+        },
+    ],
+    'pre-certificado': [
+        { 
+            name: 'Análise e visita ao local', 
+            percentage: 0.20,
+            details: [
+                'Recolha e análise de projetos de arquitetura e especialidades.',
+                'Visita ao edifício para levantamento de características construtivas.'
+            ]
+        },
+        { 
+            name: 'Modelação energética do edifício', 
+            percentage: 0.40,
+            details: [
+                'Introdução de dados no software de certificação.',
+                'Simulação do desempenho energético.',
+                'Análise de variantes e medidas de melhoria.'
+            ]
+        },
+        { 
+            name: 'Emissão do pré-certificado', 
+            percentage: 0.30,
+            details: [
+                'Preenchimento do portal SCE.',
+                'Geração do documento oficial.',
+                'Análise dos resultados obtidos.'
+            ]
+        },
+        { 
+            name: 'Reunião de apresentação', 
+            percentage: 0.10,
+            details: [
+                'Apresentação dos resultados ao cliente.',
+                'Esclarecimento de dúvidas sobre as medidas de melhoria.'
+            ]
+        },
+    ],
+    certificado: [
+        { 
+            name: 'Visita ao local e recolha de dados', 
+            percentage: 0.25,
+            details: [
+                'Inspeção detalhada dos sistemas e envolvente do edifício.',
+                'Recolha de faturas energéticas e dados de utilização.'
+            ]
+        },
+        { 
+            name: 'Cálculos e modelação energética', 
+            percentage: 0.45,
+            details: [
+                'Modelação do edifício no software regulamentar.',
+                'Cálculo da classe energética.',
+                'Identificação e quantificação de medidas de melhoria.'
+            ]
+        },
+        { 
+            name: 'Emissão do certificado energético', 
+            percentage: 0.20,
+            details: [
+                'Submissão do processo no portal SCE.',
+                'Geração do certificado energético final.'
+            ]
+        },
+        { 
+            name: 'Entrega e esclarecimentos', 
+            percentage: 0.10,
+            details: [
+                'Entrega do certificado ao proprietário.',
+                'Esclarecimentos sobre o conteúdo do documento.'
+            ]
+        },
+    ]
+};
+
+// --- Funções de Cálculo ---
+const calculateCostMain = (service, area, complexity) => {
+    const tiers = prices.mainTiers[service];
+    const tierPoints = Object.keys(tiers).map(p => (p === 'Infinity' ? Infinity : Number(p))).sort((a, b) => a - b);
+    let pricePerM2;
+    if (area <= tierPoints[0]) { pricePerM2 = tiers[tierPoints[0]]; }
+    else if (area > tierPoints[tierPoints.length - 2]) { pricePerM2 = tiers[Infinity]; }
+    else {
+        for (let i = 0; i < tierPoints.length - 1; i++) {
+            const lowerBoundArea = tierPoints[i];
+            const upperBoundArea = tierPoints[i + 1];
+            if (area > lowerBoundArea && area <= upperBoundArea) {
+                const lowerBoundPrice = tiers[lowerBoundArea];
+                const upperBoundPrice = tiers[upperBoundArea];
+                const progress = (area - lowerBoundArea) / (upperBoundArea - lowerBoundArea);
+                pricePerM2 = lowerBoundPrice + progress * (upperBoundPrice - lowerBoundPrice);
+                break;
+            }
+        }
+    }
+    return { cost: pricePerM2 * area * complexity, pricePerM2: pricePerM2 };
+};
+
+const calculateCostAux = (basePrice, area, floorPrice, complexity, threshold) => {
+    let pricePerM2 = basePrice;
+    if (area > threshold) {
+        const factor = 1 - (Math.log10(area / 1000) * 0.15);
+        pricePerM2 = Math.max(basePrice * factor, floorPrice);
+    }
+    return pricePerM2 * area * complexity;
+};
+
+const calculateQuote = (formData) => {
+    const { service, location, buildingType, buildingSubtype, mainArea, auxSpaces, factorK2000 } = formData;
+    
+    const baseComplexity = data.buildingTypes[buildingType][buildingSubtype];
+    const mainComplexity = baseComplexity * factorK2000;
+
+    const mainCostResult = calculateCostMain(service, mainArea, mainComplexity);
+    const mainCost = mainCostResult.cost;
+    let auxCost = 0;
+    let totalAuxArea = 0;
+    const selectedAuxSpaces = Object.entries(auxSpaces).map(([spaceName, auxArea]) => {
+        const auxComplexity = data.auxSpaces[spaceName];
+        auxCost += calculateCostAux(prices.aux[service], auxArea, prices.aux_floor[service], auxComplexity, 5000);
+        totalAuxArea += auxArea;
+        return { name: spaceName, area: auxArea, complexity: auxComplexity };
+    });
+    
+    let travelCost = 0;
+    let travelDays = 0;
+    let distanceCost = 0;
+    let accommodationCost = 0;
+
+    if (service === 'certificado') {
+        const distance = data.locations[location];
+        travelDays = 1; 
+        const totalArea = mainArea + totalAuxArea;
+        if (totalArea > 1000) travelDays++;
+        if (totalArea > 5000) travelDays++;
+        if (totalArea > 10000) travelDays++;
+        if (totalArea > 15000) travelDays++;
+        if (totalArea > 25000) travelDays++;
+        if (totalArea > 35000) travelDays++;
+        if (totalArea > 50000) travelDays++;
+        if (totalArea > 75000) travelDays++;
+        if (totalArea > 100000) travelDays++;
+        if (mainComplexity >= 1.25) travelDays++;
+        if (mainComplexity >= 1.5) travelDays++; 
+        
+        if (location === "Açores" || location === "Madeira") {
+            distanceCost = distance;
+        } else if (distance > 0) {
+            distanceCost = distance * 2 * 0.50; 
+        }
+        accommodationCost = travelDays * 350;
+        travelCost = distanceCost + accommodationCost;
+    }
+
+    const subtotal = mainCost + auxCost + travelCost;
+    const finalSubtotal = Math.max(subtotal, 750);
+    const vat = finalSubtotal * 0.23;
+    const total = finalSubtotal + vat;
+    
+    const team = teamDistribution[service];
+    let weightedAvgRate = 0;
+    for (const role in team) { 
+        weightedAvgRate += team[role].rate * team[role].percentage; 
+    }
+    const totalHours = finalSubtotal > 0 ? finalSubtotal / weightedAvgRate : 0;
+    const estimatedHours = Math.round(totalHours);
+
+    const teamBreakdown = {};
+    for (const role in team) {
+        const roleData = team[role];
+        const roleHours = totalHours * roleData.percentage;
+        teamBreakdown[role] = {
+            hours: roleHours.toFixed(1),
+        };
+    }
+
+    const tasks = serviceTasks[service] || [];
+    let cumulativeHours = 0;
+    const schedule = tasks.map(task => {
+        const taskHours = estimatedHours * task.percentage;
+        const startDay = cumulativeHours / 8;
+        const durationDays = taskHours / 8;
+        cumulativeHours += taskHours;
+        return {
+            name: task.name,
+            details: task.details || [],
+            hours: taskHours.toFixed(1),
+            startWeek: Math.floor(startDay / 5) + 1,
+            durationWeeks: Math.max(1, Math.ceil(durationDays / 5)),
+        };
+    });
+
+    return {
+        ...formData,
+        mainComplexity, mainCost, auxCost, totalAuxArea, selectedAuxSpaces, 
+        travelCost, travelDays, distanceCost, accommodationCost, 
+        subtotal, finalSubtotal, vat, total,
+        estimatedHours,
+        teamBreakdown,
+        schedule,
+        timestamp: new Date().toISOString()
+    };
+};
+
+// --- Componentes ---
+
+const AuthMenuView = ({ setView, handleGuestLogin }) => (
+    <div className="p-4 max-w-md mx-auto bg-white rounded-2xl shadow-lg h-full flex flex-col">
+        <header className="text-center py-4 border-b">
+            <h2 className="text-md font-semibold text-gray-700">www.koelho2000.com</h2>
+        </header>
+        <main className="flex-grow flex flex-col justify-center items-center">
+            <div className="text-center mb-12">
+                <h1 className="text-2xl font-bold text-gray-900">Bem-vindo!</h1>
+                <p className="text-gray-500 mt-2">Aceda ou crie a sua conta.</p>
+            </div>
+            <div className="w-full px-4 space-y-4">
+                <button onClick={() => setView('login')} className="w-full bg-blue-600 text-white font-bold py-4 px-6 rounded-lg hover:bg-blue-700 transition-all text-lg">
+                    LOGIN
+                </button>
+                <button onClick={() => setView('register')} className="w-full bg-gray-200 text-gray-800 font-bold py-4 px-6 rounded-lg hover:bg-gray-300 transition-all text-lg">
+                    REGISTAR
+                </button>
+                <button onClick={handleGuestLogin} className="w-full bg-gray-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-600 transition-all text-md mt-2">
+                    Entrar como Convidado
+                </button>
+            </div>
+        </main>
+        <footer className="text-center py-4 border-t mt-8">
+            <p className="text-xs text-gray-500">Koelho2000 lda</p>
+        </footer>
+    </div>
+);
+
+const LoginView = ({ setView, setNotification }) => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setError('');
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+            setNotification('Login efetuado com sucesso!');
+            // A transição de ecrã será gerida pelo onAuthStateChanged
+        } catch (err) {
+            if (err.code === 'auth/operation-not-allowed') {
+                setError('O login por E-mail/Password está desativado. Por favor, ative-o na sua consola Firebase.');
+            } else {
+                setError('Falha no login. Verifique as suas credenciais.');
+            }
+            console.error(err);
+        }
+    };
+
+    return (
+        <div className="p-4 max-w-md mx-auto bg-white rounded-2xl shadow-lg h-full flex flex-col">
+            <main className="flex-grow flex flex-col justify-center">
+                <h1 className="text-2xl font-bold text-center mb-6">Login</h1>
+                {error && <p className="bg-red-100 text-red-700 p-3 rounded-md mb-4 text-sm">{error}</p>}
+                <form onSubmit={handleLogin} className="space-y-4">
+                    <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 border rounded-lg" required />
+                    <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 border rounded-lg" required />
+                    <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg">Entrar</button>
+                    <button type="button" onClick={() => setView('authMenu')} className="w-full bg-gray-200 text-gray-800 font-bold py-3 rounded-lg">Voltar</button>
+                </form>
+            </main>
+        </div>
+    );
+};
+
+const RegisterView = ({ setView, setNotification }) => {
+    const [name, setName] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+
+    const handleRegister = async (e) => {
+        e.preventDefault();
+        setError('');
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            await updateProfile(userCredential.user, { displayName: name });
+            setNotification('Conta criada com sucesso!');
+            // A transição de ecrã será gerida pelo onAuthStateChanged
+        } catch (err) {
+            if (err.code === 'auth/operation-not-allowed') {
+                setError('O registo por E-mail/Password está desativado. Por favor, ative-o na sua consola Firebase.');
+            } else {
+                setError('Falha no registo. O e-mail pode já estar em uso.');
+            }
+            console.error(err);
+        }
+    };
+
+    return (
+        <div className="p-4 max-w-md mx-auto bg-white rounded-2xl shadow-lg h-full flex flex-col">
+            <main className="flex-grow flex flex-col justify-center">
+                <h1 className="text-2xl font-bold text-center mb-6">Registar</h1>
+                {error && <p className="bg-red-100 text-red-700 p-3 rounded-md mb-4 text-sm">{error}</p>}
+                <form onSubmit={handleRegister} className="space-y-4">
+                    <input type="text" placeholder="Nome" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3 border rounded-lg" required />
+                    <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 border rounded-lg" required />
+                    <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 border rounded-lg" required />
+                    <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg">Registar</button>
+                    <button type="button" onClick={() => setView('authMenu')} className="w-full bg-gray-200 text-gray-800 font-bold py-3 rounded-lg">Voltar</button>
+                </form>
+            </main>
+        </div>
+    );
+};
+
+
+const MenuView = ({ setView, user, handleLogout, isGuest }) => (
+    <div className="p-4 max-w-md mx-auto bg-white rounded-2xl shadow-lg h-full flex flex-col">
+        <header className="text-center py-4 border-b">
+            <h2 className="text-md font-semibold text-gray-700">www.koelho2000.com</h2>
+             {user && !isGuest && <p className="text-sm text-gray-600 mt-1">Bem-vindo, {user.displayName || user.email}</p>}
+             {isGuest && <p className="text-sm text-gray-600 mt-1">Modo Convidado</p>}
+        </header>
+        <main className="flex-grow flex flex-col justify-center items-center">
+            <div className="text-center mb-12">
+                <h1 className="text-2xl font-bold text-gray-900">K2000-ENGENHARIA-PROPOSTAS</h1>
+                <p className="text-gray-500 mt-2">V.1.0</p>
+            </div>
+            <div className="w-full px-4 space-y-4">
+                <button onClick={() => setView('calculator')} className="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-all text-lg">
+                    Nova Proposta
+                </button>
+                <button 
+                    onClick={() => setView('list')} 
+                    className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all text-lg disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    disabled={isGuest}
+                    title={isGuest ? 'Funcionalidade indisponível no modo convidado' : ''}
+                >
+                    Ver Propostas
+                </button>
+                 <button 
+                    onClick={() => setView('dashboard')} 
+                    className="w-full bg-teal-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-teal-700 transition-all text-lg disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    disabled={isGuest}
+                    title={isGuest ? 'Funcionalidade indisponível no modo convidado' : ''}
+                >
+                    Dashboard
+                </button>
+                 <button onClick={handleLogout} className="w-full bg-red-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-red-600 transition-all text-md mt-6">
+                    Sair
+                </button>
+            </div>
+        </main>
+        <footer className="text-center py-4 border-t mt-8">
+            <p className="text-xs text-gray-500">Koelho2000 lda</p>
+            <p className="text-xs text-gray-500">Rua da Boa Vontade 4, Barrunchal, 2710-151 Sintra</p>
+            <p className="text-xs text-gray-500">Telemóvel: 934021666 | Email: geral@koelho2000.com</p>
+        </footer>
+    </div>
+);
+
+const defaultFormData = {
+    clientName: '',
+    companyName: '',
+    buildingName: '',
+    service: 'avac',
+    location: 'Lisboa',
+    buildingType: 'Comércio',
+    buildingSubtype: 'Loja de rua',
+    mainArea: 500,
+    auxSpaces: {},
+    factorK2000: 1.0,
+};
+
+const CalculatorForm = ({ onCalculate, setView, editingProposal, clearEditing, setNotification }) => {
+    const [formData, setFormData] = useState(defaultFormData);
+    const [error, setError] = useState('');
+    const [isFactorUnlocked, setIsFactorUnlocked] = useState(false);
+    const [password, setPassword] = useState('');
+    const [travelInfo, setTravelInfo] = useState({ days: 0, distance: 0 });
+
+    useEffect(() => {
+        if (editingProposal) {
+            setFormData({ ...defaultFormData, ...editingProposal });
+        } else {
+            setFormData(defaultFormData);
+        }
+    }, [editingProposal]);
+
+    useEffect(() => {
+        if (formData.service === 'certificado') {
+            const totalAuxArea = Object.values(formData.auxSpaces).reduce((sum, area) => sum + area, 0);
+            const totalArea = formData.mainArea + totalAuxArea;
+            const mainComplexity = data.buildingTypes[formData.buildingType]?.[formData.buildingSubtype] || 1;
+            
+            let days = 1;
+            if (totalArea > 1000) days++;
+            if (totalArea > 5000) days++;
+            if (totalArea > 10000) days++;
+            if (totalArea > 15000) days++;
+            if (totalArea > 25000) days++;
+            if (totalArea > 35000) days++;
+            if (totalArea > 50000) days++;
+            if (totalArea > 75000) days++;
+            if (totalArea > 100000) days++;
+            if (mainComplexity >= 1.25) days++;
+            if (mainComplexity >= 1.5) days++;
+
+            const distance = data.locations[formData.location] || 0;
+            const distanceKm = (formData.location === "Açores" || formData.location === "Madeira") ? 'N/A' : distance * 2;
+
+            setTravelInfo({ days, distance: distanceKm });
+        } else {
+            setTravelInfo({ days: 0, distance: 0 });
+        }
+    }, [formData.service, formData.location, formData.mainArea, formData.auxSpaces, formData.buildingType, formData.buildingSubtype]);
+
+
+    const handleInputChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+        if (name === 'buildingType') {
+            setFormData(prev => ({ ...prev, buildingSubtype: Object.keys(data.buildingTypes[value])[0] }));
+        }
+    };
+
+    const handleAuxCheckboxChange = (e) => {
+        const { value, checked } = e.target;
+        const newAuxSpaces = { ...formData.auxSpaces };
+        if (checked) {
+            newAuxSpaces[value] = 50;
+        } else {
+            delete newAuxSpaces[value];
+        }
+        setFormData(prev => ({ ...prev, auxSpaces: newAuxSpaces }));
+    };
+
+    const handleAuxSliderChange = (spaceName, value) => {
+        setFormData(prev => ({
+            ...prev,
+            auxSpaces: { ...prev.auxSpaces, [spaceName]: parseInt(value) || 10 }
+        }));
+    };
+    
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!formData.clientName || !formData.buildingName) {
+            setError('Por favor, preencha o nome do cliente e do edifício.');
+            return;
+        }
+        setError('');
+        const results = calculateQuote(formData);
+        onCalculate(results);
+    };
+    
+    const handleCancel = () => {
+        if(editingProposal) {
+            clearEditing();
+        }
+        setView('list');
+    }
+
+    return (
+        <div className="p-4 max-w-md mx-auto bg-white rounded-2xl shadow-lg">
+            <div className="text-center mb-6">
+                <h1 className="text-2xl font-bold text-gray-900">{editingProposal ? 'Editar Proposta' : 'Nova Proposta'}</h1>
+            </div>
+            {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded-md mb-4 text-sm" role="alert"><p>{error}</p></div>}
+            
+            <form onSubmit={handleSubmit} className="space-y-6">
+                <fieldset>
+                    <legend className="text-lg font-semibold text-gray-800 mb-2">1. Dados do Projeto</legend>
+                    <div className="space-y-2">
+                        <input type="text" name="clientName" placeholder="Nome do Cliente" value={formData.clientName} onChange={handleInputChange} className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                        <input type="text" name="companyName" placeholder="Nome da Empresa" value={formData.companyName} onChange={handleInputChange} className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                        <input type="text" name="buildingName" placeholder="Nome do Edifício" value={formData.buildingName} onChange={handleInputChange} className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend className="text-lg font-semibold text-gray-800 mb-2">2. Tipo de Serviço</legend>
+                    <div className="flex flex-col gap-2">
+                        {Object.keys(teamDistribution).map(serviceKey => (
+                            <label key={serviceKey} className={`p-3 border rounded-lg cursor-pointer text-sm ${formData.service === serviceKey ? 'bg-blue-50 border-blue-600' : 'hover:bg-gray-50'}`}>
+                                <input type="radio" name="service" value={serviceKey} checked={formData.service === serviceKey} onChange={handleInputChange} className="sr-only" />
+                                <strong className="capitalize">{serviceKey.replace('-', ' ')}</strong>
+                            </label>
+                        ))}
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend className="text-lg font-semibold text-gray-800 mb-2">3. Localização</legend>
+                    <select name="location" value={formData.location} onChange={handleInputChange} className="w-full p-2 border border-gray-300 rounded-lg text-sm">
+                        {Object.keys(data.locations).map(loc => <option key={loc} value={loc}>{loc}</option>)}
+                    </select>
+                    {formData.service === 'certificado' && (
+                        <div className="pt-2">
+                            <p className="text-sm text-gray-600">
+                                Deslocação: 
+                                <span className="font-bold text-blue-700 ml-2">
+                                    {travelInfo.distance} {travelInfo.distance !== 'N/A' && 'km'}
+                                </span>
+                            </p>
+                        </div>
+                    )}
+                </fieldset>
+
+                <fieldset>
+                    <legend className="text-lg font-semibold text-gray-800 mb-2">4. Tipologia</legend>
+                    <div className="space-y-2">
+                        <select name="buildingType" value={formData.buildingType} onChange={handleInputChange} className="w-full p-2 border border-gray-300 rounded-lg text-sm">
+                            {Object.keys(data.buildingTypes).map(type => <option key={type} value={type}>{type}</option>)}
+                        </select>
+                        <select name="buildingSubtype" value={formData.buildingSubtype} onChange={handleInputChange} className="w-full p-2 border border-gray-300 rounded-lg text-sm">
+                            {Object.keys(data.buildingTypes[formData.buildingType]).map(subtype => <option key={subtype} value={subtype}>{subtype}</option>)}
+                        </select>
+                         <div className="pt-2">
+                            <p className="text-sm text-gray-600">
+                                Fator de Complexidade: 
+                                <span className="font-bold text-blue-700 ml-2">
+                                    {data.buildingTypes[formData.buildingType]?.[formData.buildingSubtype] || 'N/A'}x
+                                </span>
+                            </p>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend className="text-lg font-semibold text-gray-800 mb-2">5. Área Principal</legend>
+                    <div className="flex items-center gap-2">
+                        <input 
+                            type="range" 
+                            min="50" 
+                            max="100000" 
+                            step={
+                                formData.mainArea <= 1000 ? 5 :
+                                formData.mainArea <= 5000 ? 50 : 500
+                            }
+                            name="mainArea" 
+                            value={formData.mainArea} 
+                            onChange={(e) => setFormData(prev => ({ ...prev, mainArea: parseInt(e.target.value) || 50 }))}
+                            className="w-full" 
+                        />
+                        <input
+                            type="number"
+                            min="50"
+                            max="100000"
+                            step={
+                                formData.mainArea <= 1000 ? 5 :
+                                formData.mainArea <= 5000 ? 50 : 500
+                            }
+                            value={formData.mainArea}
+                            onChange={(e) => setFormData(prev => ({ ...prev, mainArea: parseInt(e.target.value) || 50 }))}
+                            className="p-1 border border-gray-300 rounded-lg text-sm w-24 text-center"
+                        />
+                        <span className="text-sm text-gray-600">m²</span>
+                    </div>
+                    {formData.service === 'certificado' && (
+                        <div className="pt-2">
+                            <p className="text-sm text-gray-600">
+                                Dias de Estadia: 
+                                <span className="font-bold text-blue-700 ml-2">
+                                    {travelInfo.days}
+                                </span>
+                            </p>
+                        </div>
+                    )}
+                </fieldset>
+
+                <fieldset>
+                    <legend className="text-lg font-semibold text-gray-800 mb-2">6. Espaços Auxiliares</legend>
+                    <div className="space-y-3">
+                        {Object.keys(data.auxSpaces).map(space => (
+                            <div key={space}>
+                                <label className="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" value={space} checked={!!formData.auxSpaces[space]} onChange={handleAuxCheckboxChange} />
+                                    {space}
+                                </label>
+                                {formData.auxSpaces[space] !== undefined && (
+                                    <div className="flex items-center gap-2 mt-1 pl-6">
+                                        <input 
+                                            type="range" 
+                                            min="10" 
+                                            max="50000" 
+                                            step={
+                                                formData.auxSpaces[space] <= 1000 ? 5 :
+                                                formData.auxSpaces[space] <= 5000 ? 50 : 500
+                                            }
+                                            value={formData.auxSpaces[space]} 
+                                            onChange={(e) => handleAuxSliderChange(space, e.target.value)} 
+                                            className="w-full" 
+                                        />
+                                        <input
+                                            type="number"
+                                            min="10"
+                                            max="50000"
+                                            step={
+                                                formData.auxSpaces[space] <= 1000 ? 5 :
+                                                formData.auxSpaces[space] <= 5000 ? 50 : 500
+                                            }
+                                            value={formData.auxSpaces[space]}
+                                            onChange={(e) => handleAuxSliderChange(space, e.target.value)}
+                                            className="p-1 border border-gray-300 rounded-lg text-sm w-20 text-center"
+                                        />
+                                        <span className="text-sm text-gray-600">m²</span>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend className="text-lg font-semibold text-gray-800 mb-2">7. Fator K2000</legend>
+                    {!isFactorUnlocked ? (
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="password"
+                                placeholder="Password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="p-2 border border-gray-300 rounded-lg text-sm"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (password === 'k2000') {
+                                        setIsFactorUnlocked(true);
+                                        setNotification('Fator K2000 desbloqueado.');
+                                    } else {
+                                        setNotification('Password incorreta.');
+                                    }
+                                }}
+                                className="bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg"
+                            >
+                                Desbloquear
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="range" 
+                                min="0.25" 
+                                max="10" 
+                                step="0.25"
+                                name="factorK2000" 
+                                value={formData.factorK2000} 
+                                onChange={(e) => setFormData(prev => ({ ...prev, factorK2000: parseFloat(e.target.value) }))}
+                                className="w-full" 
+                            />
+                            <span className="font-bold text-blue-700 bg-blue-100 py-1 px-2 rounded-lg text-sm w-24 text-center">
+                                {Number(formData.factorK2000).toFixed(2)}
+                            </span>
+                        </div>
+                    )}
+                </fieldset>
+
+                <div className="pt-4 flex flex-col gap-2">
+                    <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-all">
+                        {editingProposal ? 'Atualizar e Ver Proposta' : 'Calcular Orçamento'}
+                    </button>
+                    <button type="button" onClick={handleCancel} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all">
+                        Cancelar
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+};
+
+const ScheduleGantt = ({ schedule, startDate }) => {
+    if (!schedule || schedule.length === 0) {
+        return <p className="text-sm text-gray-500">Cronograma não disponível.</p>;
+    }
+
+    const totalWeeks = schedule.reduce((max, task) => Math.max(max, task.startWeek + task.durationWeeks - 1), 0);
+    const weekHeaders = Array.from({ length: totalWeeks }, (_, i) => i + 1);
+
+    return (
+        <div className="space-y-2 text-sm">
+            <p><strong>Data de Início Prevista:</strong> {new Date(startDate).toLocaleDateString('pt-PT')}</p>
+            <div className="overflow-x-auto">
+                <div className="grid gap-y-2" style={{ gridTemplateColumns: `minmax(150px, 1.5fr) repeat(${totalWeeks}, 1fr)` }}>
+                    {/* Headers */}
+                    <div className="font-semibold border-b pb-1">Tarefa</div>
+                    {weekHeaders.map(week => (
+                        <div key={week} className="text-center font-semibold border-b pb-1 text-xs">Sem. {week}</div>
+                    ))}
+
+                    {/* Task Rows */}
+                    {schedule.map((task, index) => (
+                        <React.Fragment key={index}>
+                            <div className="pr-2 py-1 border-b">
+                                <p className="font-semibold">{task.name}</p>
+                                {task.details && task.details.length > 0 && (
+                                    <ul className="list-disc list-inside pl-2 mt-1 text-xs text-gray-600">
+                                        {task.details.map((detail, i) => <li key={i}>{detail}</li>)}
+                                    </ul>
+                                )}
+                            </div>
+                            <div className="relative h-full grid border-b" style={{ 
+                                gridColumnStart: 2, 
+                                gridColumnEnd: -1,
+                                gridTemplateColumns: `repeat(${totalWeeks}, 1fr)` 
+                            }}>
+                                <div 
+                                    className="bg-blue-500 rounded h-5 my-auto"
+                                    style={{
+                                        gridColumnStart: task.startWeek,
+                                        gridColumnEnd: `span ${task.durationWeeks}`,
+                                    }}
+                                    title={`${task.name} - ${task.hours}h`}
+                                ></div>
+                            </div>
+                        </React.Fragment>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+const ProposalView = ({ proposal, onSave, onBack, userId, setNotification, isGuest }) => {
+    const formatCurrency = (value) => value ? value.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }) : '€0.00';
+
+    const handleSaveOrUpdate = async () => {
+        if (!userId) {
+            setNotification("Não foi possível identificar o utilizador. Tente novamente.");
+            return;
+        }
+        
+        const collectionPath = `artifacts/${firebaseConfig.projectId}/users/${userId}/proposals`;
+
+        const { id, ...proposalData } = proposal;
+
+        try {
+            if (id) { // Atualizar proposta existente
+                const oldRefParts = proposalData.ref.split('-');
+                const newServiceCode = serviceCodes[proposalData.service] || 'XXX';
+
+                if (oldRefParts.length === 4 && oldRefParts[3] !== newServiceCode) {
+                    proposalData.ref = `${oldRefParts[0]}-${oldRefParts[1]}-${oldRefParts[2]}-${newServiceCode}`;
+                }
+                
+                const docRef = doc(db, collectionPath, id);
+                await updateDoc(docRef, proposalData);
+                setNotification(`Proposta ${proposalData.ref} atualizada com sucesso!`);
+            } else { // Criar nova proposta
+                const year = new Date().getFullYear();
+                const serviceCode = serviceCodes[proposalData.service] || 'XXX';
+                const newRef = `K2000-${Date.now().toString().slice(-6)}-${year}-${serviceCode}`;
+                
+                await addDoc(collection(db, collectionPath), {
+                    ...proposalData,
+                    ref: newRef,
+                    userId: userId,
+                });
+                setNotification(`Proposta guardada com sucesso! Ref: ${newRef}`);
+            }
+            onSave();
+        } catch (e) {
+            console.error("Erro ao guardar a proposta: ", e);
+            setNotification("Ocorreu um erro ao guardar a proposta.");
+        }
+    };
+
+    return (
+        <div className="p-4 max-w-md mx-auto bg-white rounded-2xl shadow-lg">
+            <div className="text-center mb-4">
+                <h2 className="text-2xl font-bold text-blue-700">Proposta de Orçamento</h2>
+                {proposal.ref && <p className="text-sm text-gray-500">Ref: {proposal.ref}</p>}
+            </div>
+
+            <section className="my-4 text-sm">
+                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">1. Dados do Projeto</h3>
+                <div className="space-y-1">
+                    <p><strong>Cliente:</strong> {proposal.clientName}</p>
+                    {proposal.companyName && <p><strong>Empresa:</strong> {proposal.companyName}</p>}
+                    <p><strong>Edifício:</strong> {proposal.buildingName}</p>
+                    <p><strong>Serviço:</strong> <span className="capitalize">{proposal.service.replace('-', ' ')}</span></p>
+                    <p><strong>Localização:</strong> {proposal.location}</p>
+                    <p><strong>Tipologia:</strong> {proposal.buildingType}</p>
+                    <p><strong>Subtipologia:</strong> {proposal.buildingSubtype}</p>
+                </div>
+            </section>
+
+            <section className="my-4 text-sm">
+                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">2. Áreas e Complexidade</h3>
+                <div className="space-y-1">
+                    <p><strong>Área Principal:</strong> {proposal.mainArea} m²</p>
+                    <p><strong>Área Auxiliar:</strong> {proposal.totalAuxArea} m²</p>
+                    <p><strong>Área Total:</strong> <strong className="text-blue-700">{proposal.mainArea + proposal.totalAuxArea} m²</strong></p>
+                     <p><strong>Fator de Complexidade:</strong> {proposal.mainComplexity.toFixed(2)}x</p>
+                </div>
+                {proposal.selectedAuxSpaces && proposal.selectedAuxSpaces.length > 0 && (
+                    <div className="mt-2">
+                        <h4 className="font-semibold">Espaços Auxiliares:</h4>
+                        <ul className="list-disc list-inside pl-2">
+                            {proposal.selectedAuxSpaces.map(space => (
+                                <li key={space.name}>{space.name}: {space.area} m²</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </section>
+            
+            <section className="my-4 text-sm">
+                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3>
+                <div className="bg-gray-100 p-3 rounded-lg space-y-2">
+                    <div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div>
+                    <div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>
+                    {proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}
+                    <hr/>
+                    <div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div>
+                    <div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div>
+                    <div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div>
+                </div>
+            </section>
+
+            <section className="my-4 text-sm">
+                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">4. Detalhe de Horas e Custos</h3>
+                <div className="space-y-1">
+                    <p><strong>Total de Horas Estimadas:</strong> {proposal.estimatedHours} h</p>
+                    {proposal.teamBreakdown && (
+                        <>
+                            <h4 className="font-semibold pt-2">Horas por Técnico:</h4>
+                            <ul className="list-disc list-inside pl-2">
+                                {Object.entries(proposal.teamBreakdown).map(([role, data]) => (
+                                    <li key={role}>{role}: {data.hours} h</li>
+                                ))}
+                            </ul>
+                        </>
+                    )}
+                    {proposal.service === 'certificado' && proposal.travelCost > 0 && (
+                        <div className="mt-2">
+                            <h4 className="font-semibold pt-2">Detalhe de Deslocação:</h4>
+                            <p>Custo de Deslocação (km): {formatCurrency(proposal.distanceCost)}</p>
+                            <p>Custo de Estadia ({proposal.travelDays} dias): {formatCurrency(proposal.accommodationCost)}</p>
+                        </div>
+                    )}
+                </div>
+            </section>
+
+            <section className="my-4 text-sm">
+                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3>
+                <ScheduleGantt schedule={proposal.schedule} startDate={proposal.timestamp} />
+            </section>
+            
+            <div className="pt-4 flex flex-col gap-2">
+                <button 
+                    onClick={handleSaveOrUpdate} 
+                    className="w-full bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    disabled={isGuest}
+                    title={isGuest ? 'Crie uma conta para guardar as suas propostas' : ''}
+                >
+                    {proposal.id ? 'Atualizar Proposta' : 'Guardar Proposta'}
+                </button>
+                <button onClick={onBack} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all">
+                    {proposal.id ? 'Voltar à Lista' : 'Editar Dados'}
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const ViewProposalDetails = ({ proposal, setView }) => {
+    const formatCurrency = (value) => value ? value.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }) : '€0.00';
+    
+    return (
+        <div className="p-4 max-w-md mx-auto bg-white rounded-2xl shadow-lg">
+            <div className="text-center my-4">
+                <h2 className="text-2xl font-bold text-blue-700">Detalhes da Proposta</h2>
+                <p className="text-sm text-gray-500">Ref: {proposal.ref}</p>
+            </div>
+
+            <section className="my-4 text-sm">
+                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">1. Dados do Projeto</h3>
+                <div className="space-y-1">
+                    <p><strong>Cliente:</strong> {proposal.clientName}</p>
+                    {proposal.companyName && <p><strong>Empresa:</strong> {proposal.companyName}</p>}
+                    <p><strong>Edifício:</strong> {proposal.buildingName}</p>
+                    <p><strong>Serviço:</strong> <span className="capitalize">{proposal.service.replace('-', ' ')}</span></p>
+                    <p><strong>Localização:</strong> {proposal.location}</p>
+                    <p><strong>Tipologia:</strong> {proposal.buildingType}</p>
+                    <p><strong>Subtipologia:</strong> {proposal.buildingSubtype}</p>
+                </div>
+            </section>
+
+            <section className="my-4 text-sm">
+                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">2. Áreas e Complexidade</h3>
+                <div className="space-y-1">
+                    <p><strong>Área Principal:</strong> {proposal.mainArea} m²</p>
+                    <p><strong>Área Auxiliar:</strong> {proposal.totalAuxArea} m²</p>
+                    <p><strong>Área Total:</strong> <strong className="text-blue-700">{proposal.mainArea + proposal.totalAuxArea} m²</strong></p>
+                     <p><strong>Fator de Complexidade:</strong> {proposal.mainComplexity.toFixed(2)}x</p>
+                </div>
+                {proposal.selectedAuxSpaces && proposal.selectedAuxSpaces.length > 0 && (
+                    <div className="mt-2">
+                        <h4 className="font-semibold">Espaços Auxiliares:</h4>
+                        <ul className="list-disc list-inside pl-2">
+                            {proposal.selectedAuxSpaces.map(space => (
+                                <li key={space.name}>{space.name}: {space.area} m²</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </section>
+            
+            <section className="my-4 text-sm">
+                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3>
+                <div className="bg-gray-100 p-3 rounded-lg space-y-2">
+                    <div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div>
+                    <div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>
+                    {proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}
+                    <hr/>
+                    <div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div>
+                    <div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div>
+                    <div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div>
+                </div>
+            </section>
+
+            <section className="my-4 text-sm">
+                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">4. Detalhe de Horas e Custos</h3>
+                <div className="space-y-1">
+                    <p><strong>Total de Horas Estimadas:</strong> {proposal.estimatedHours || 'N/A'} h</p>
+                    {proposal.teamBreakdown && (
+                        <>
+                            <h4 className="font-semibold pt-2">Horas por Técnico:</h4>
+                            <ul className="list-disc list-inside pl-2">
+                                {Object.entries(proposal.teamBreakdown).map(([role, data]) => (
+                                    <li key={role}>{role}: {data.hours} h</li>
+                                ))}
+                            </ul>
+                        </>
+                    )}
+                    {proposal.service === 'certificado' && proposal.travelCost > 0 && (
+                        <div className="mt-2">
+                            <h4 className="font-semibold pt-2">Detalhe de Deslocação:</h4>
+                            <p>Custo de Deslocação (km): {formatCurrency(proposal.distanceCost)}</p>
+                            <p>Custo de Estadia ({proposal.travelDays} dias): {formatCurrency(proposal.accommodationCost)}</p>
+                        </div>
+                    )}
+                </div>
+            </section>
+
+            <section className="my-4 text-sm">
+                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3>
+                <ScheduleGantt schedule={proposal.schedule} startDate={proposal.timestamp} />
+            </section>
+            
+            <div className="pt-4 flex flex-col gap-2">
+                <button onClick={() => setView('list')} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all">
+                    Voltar à Lista
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const PrintOptionsModal = ({ onConfirm, onCancel }) => {
+    const [options, setOptions] = useState({
+        headerFooter: true,
+        projectData: true,
+        areas: true,
+        budgetSummary: true,
+        hoursDetails: true,
+        travelDetails: true,
+        schedule: true,
+    });
+
+    const handleCheckboxChange = (e) => {
+        const { name, checked } = e.target;
+        setOptions(prev => ({ ...prev, [name]: checked }));
+    };
+
+    const optionLabels = {
+        headerFooter: 'Cabeçalho e Rodapé',
+        projectData: 'Dados do Projeto',
+        areas: 'Áreas e Complexidade',
+        budgetSummary: 'Resumo do Orçamento',
+        hoursDetails: 'Detalhe de Horas',
+        travelDetails: 'Detalhe de Deslocação',
+        schedule: 'Cronograma',
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-2xl shadow-lg w-full max-w-sm">
+                <h2 className="text-xl font-bold text-gray-800 mb-4">Opções de Impressão</h2>
+                <div className="space-y-3">
+                    {Object.keys(options).map(key => (
+                        <label key={key} className="flex items-center gap-3 text-sm">
+                            <input
+                                type="checkbox"
+                                name={key}
+                                checked={options[key]}
+                                onChange={handleCheckboxChange}
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            {optionLabels[key]}
+                        </label>
+                    ))}
+                </div>
+                <div className="mt-6 flex gap-3">
+                    <button onClick={() => onConfirm(options)} className="flex-1 bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">
+                        Gerar Proposta
+                    </button>
+                    <button onClick={onCancel} className="flex-1 bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const PrintPreview = ({ proposal, options, onBack }) => {
+    const formatCurrency = (value) => value != null ? value.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }) : '€0.00';
+
+    const handlePrint = () => {
+        const printContent = document.getElementById('print-page');
+        if (!printContent) {
+            console.error("Elemento para impressão não encontrado.");
+            return;
+        }
+
+        const printWindow = window.open('', '_blank', 'height=800,width=800');
+        if (!printWindow) {
+            alert('Por favor, permita pop-ups para imprimir.');
+            return;
+        }
+
+        printWindow.document.write(`
+            <html>
+                <head>
+                    <title>Imprimir Proposta - ${proposal.ref || ''}</title>
+                    <script src="https://cdn.tailwindcss.com"></script>
+                    <style>
+                        body {
+                            -webkit-print-color-adjust: exact !important;
+                            print-color-adjust: exact !important;
+                        }
+                    </style>
+                </head>
+                <body>
+                    ${printContent.innerHTML}
+                </body>
+            </html>
+        `);
+
+        printWindow.document.close();
+        
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+            printWindow.close();
+        }, 500);
+    };
+
+    return (
+        <div className="bg-white rounded-2xl shadow-lg">
+            <div className="p-4 no-print">
+                <h2 className="text-xl font-bold text-center">Pré-visualização</h2>
+                <div className="mt-4 flex gap-2">
+                    <button onClick={handlePrint} className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Imprimir</button>
+                    <button onClick={onBack} className="w-full bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg">Voltar</button>
+                </div>
+            </div>
+
+            <div className="print-container p-2">
+                <div id="print-page" className="bg-white p-6 rounded-xl shadow-md">
+                    {options.headerFooter && (
+                        <header className="text-center pb-4 border-b">
+                            <h2 className="text-md font-semibold text-gray-700">www.koelho2000.com</h2>
+                        </header>
+                    )}
+                    <main className="my-4 text-sm">
+                        <div className="text-center my-4">
+                            <h2 className="text-2xl font-bold text-blue-700">Proposta de Orçamento</h2>
+                            {proposal.ref && <p className="text-sm text-gray-500">Ref: {proposal.ref}</p>}
+                        </div>
+
+                        {options.projectData && (
+                            <section className="my-4">
+                                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">1. Dados do Projeto</h3>
+                                <div className="space-y-1">
+                                    <p><strong>Cliente:</strong> {proposal.clientName}</p>
+                                    {proposal.companyName && `<p><strong>Empresa:</strong> ${proposal.companyName}</p>`}
+                                    <p><strong>Edifício:</strong> {proposal.buildingName}</p>
+                                    <p><strong>Serviço:</strong> <span className="capitalize">{proposal.service.replace('-', ' ')}</span></p>
+                                    <p><strong>Localização:</strong> {proposal.location}</p>
+                                    <p><strong>Tipologia:</strong> {proposal.buildingType}</p>
+                                    <p><strong>Subtipologia:</strong> {proposal.buildingSubtype}</p>
+                                </div>
+                            </section>
+                        )}
+
+                        {options.areas && (
+                            <section className="my-4">
+                                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">2. Áreas e Complexidade</h3>
+                                <div className="space-y-1">
+                                    <p><strong>Área Principal:</strong> {proposal.mainArea} m²</p>
+                                    <p><strong>Área Auxiliar:</strong> {proposal.totalAuxArea} m²</p>
+                                    <p><strong>Área Total:</strong> <strong className="text-blue-700">{proposal.mainArea + proposal.totalAuxArea} m²</strong></p>
+                                    <p><strong>Fator de Complexidade:</strong> {proposal.mainComplexity.toFixed(2)}x</p>
+                                </div>
+                                {proposal.selectedAuxSpaces && proposal.selectedAuxSpaces.length > 0 && (
+                                    <div className="mt-2">
+                                        <h4 className="font-semibold">Espaços Auxiliares:</h4>
+                                        <ul className="list-disc list-inside pl-2">
+                                            {proposal.selectedAuxSpaces.map(space => (
+                                                <li key={space.name}>{space.name}: {space.area} m²</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </section>
+                        )}
+
+                        {options.budgetSummary && (
+                            <section className="my-4">
+                                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3>
+                                <div className="bg-gray-100 p-3 rounded-lg space-y-2">
+                                    <div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div>
+                                    <div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>
+                                    {proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}
+                                    <hr/>
+                                    <div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div>
+                                    <div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div>
+                                    <div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div>
+                                </div>
+                            </section>
+                        )}
+
+                        {(options.hoursDetails || (options.travelDetails && proposal.service === 'certificado')) && (
+                             <section className="my-4">
+                                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">4. Detalhe de Horas e Custos</h3>
+                                {options.hoursDetails && (
+                                    <div className="space-y-1">
+                                        <p><strong>Total de Horas Estimadas:</strong> {proposal.estimatedHours} h</p>
+                                        {proposal.teamBreakdown && (
+                                            <>
+                                                <h4 className="font-semibold pt-2">Horas por Técnico:</h4>
+                                                <ul className="list-disc list-inside pl-2">
+                                                    {Object.entries(proposal.teamBreakdown).map(([role, data]) => (
+                                                        <li key={role}>{role}: {data.hours} h</li>
+                                                    ))}
+                                                </ul>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                                {options.travelDetails && proposal.service === 'certificado' && proposal.travelCost > 0 && (
+                                    <div className="mt-2">
+                                        <h4 className="font-semibold pt-2">Detalhe de Deslocação:</h4>
+                                        <p>Custo de Deslocação (km): {formatCurrency(proposal.distanceCost)}</p>
+                                        <p>Custo de Estadia ({proposal.travelDays} dias): {formatCurrency(proposal.accommodationCost)}</p>
+                                    </div>
+                                )}
+                            </section>
+                        )}
+                        
+                        {options.schedule && (
+                             <section className="my-4 text-sm">
+                                <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3>
+                                <ScheduleGantt schedule={proposal.schedule} startDate={proposal.timestamp} />
+                            </section>
+                        )}
+                    </main>
+                    {options.headerFooter && (
+                        <footer className="text-center pt-4 border-t mt-8 text-xs text-gray-500">
+                            <p>Koelho2000 lda</p>
+                            <p>Rua da Boa Vontade 4, Barrunchal, 2710-151 Sintra</p>
+                            <p>Telemóvel: 934021666 | Email: geral@koelho2000.com</p>
+                        </footer>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const ActionPopup = ({ proposal, onView, onPrint, onCopy, onEdit, onDelete, onClose, isGuest }) => {
+    if (!proposal) return null;
+    const buttonClass = "w-full text-left p-3 rounded-lg transition-colors";
+    const enabledClass = "hover:bg-gray-100";
+    const disabledClass = "opacity-50 cursor-not-allowed";
+
+    const actions = [
+        { label: 'Ver Detalhes', handler: () => onView(proposal), disabled: false },
+        { label: 'Imprimir', handler: () => onPrint(proposal), disabled: isGuest },
+        { label: 'Copiar', handler: () => onCopy(proposal), disabled: isGuest },
+        { label: 'Editar', handler: () => onEdit(proposal), disabled: isGuest },
+        { label: 'Apagar', handler: () => onDelete(proposal.id), disabled: isGuest, isDelete: true },
+    ];
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={onClose}>
+            <div className="bg-white p-4 rounded-2xl shadow-lg w-full max-w-xs" onClick={(e) => e.stopPropagation()}>
+                <h3 className="font-bold text-center mb-2 text-gray-800">{proposal.ref}</h3>
+                <p className="text-sm text-center text-gray-500 mb-4 truncate">{proposal.clientName}</p>
+                <div className="flex flex-col gap-1 text-sm">
+                    {actions.map(action => (
+                        <button 
+                            key={action.label}
+                            onClick={() => { if (!action.disabled) { action.handler(); onClose(); } }}
+                            className={`${buttonClass} ${action.disabled ? disabledClass : (action.isDelete ? 'text-red-600 hover:bg-red-50' : enabledClass)}`}
+                            disabled={action.disabled}
+                            title={action.disabled ? 'Funcionalidade indisponível no modo convidado' : ''}
+                        >
+                            {action.label}
+                        </button>
+                    ))}
+                    <button onClick={onClose} className={`${buttonClass} ${enabledClass} mt-2 border-t pt-3`}>
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const ProposalList = ({ proposals, setView, setEditingProposal, setNotification, isGuest }) => {
+    const [selected, setSelected] = useState([]);
+    const [proposalToDelete, setProposalToDelete] = useState(null);
+    const [proposalToPrint, setProposalToPrint] = useState(null);
+    const [showSummary, setShowSummary] = useState(false);
+    const [selectedProposalForAction, setSelectedProposalForAction] = useState(null);
+    const [showFilters, setShowFilters] = useState(false);
+    const [filters, setFilters] = useState({
+        service: '',
+        companyName: '',
+        dateFrom: '',
+        dateTo: '',
+        minTotal: '',
+        maxTotal: '',
+    });
+
+    const companyNames = useMemo(() => {
+        const names = proposals
+            .map(p => p.companyName)
+            .filter(name => name); // Filter out falsy values (null, undefined, '')
+        return [...new Set(names)].sort(); // Get unique names and sort them
+    }, [proposals]);
+
+    const handleFilterChange = (e) => {
+        const { name, value } = e.target;
+        setFilters(prev => ({ ...prev, [name]: value }));
+    };
+    
+    const clearFilters = () => {
+        setFilters({ service: '', companyName: '', dateFrom: '', dateTo: '', minTotal: '', maxTotal: '' });
+    };
+
+    const filteredProposals = proposals.filter(p => {
+        const proposalDate = new Date(p.timestamp);
+        const dateFrom = filters.dateFrom ? new Date(filters.dateFrom) : null;
+        const dateTo = filters.dateTo ? new Date(filters.dateTo) : null;
+        if(dateFrom) dateFrom.setHours(0,0,0,0);
+        if(dateTo) dateTo.setHours(23,59,59,999);
+
+        return (
+            (filters.service === '' || p.service === filters.service) &&
+            (filters.companyName === '' || p.companyName === filters.companyName) &&
+            (!dateFrom || proposalDate >= dateFrom) &&
+            (!dateTo || proposalDate <= dateTo) &&
+            (filters.minTotal === '' || p.total >= parseFloat(filters.minTotal)) &&
+            (filters.maxTotal === '' || p.total <= parseFloat(filters.maxTotal))
+        );
+    });
+
+    const handleSelect = (id) => {
+        setSelected(prev => 
+            prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
+        );
+    };
+
+    const handleCompare = () => {
+        const toCompare = proposals.filter(p => selected.includes(p.id));
+        setView('compare', toCompare);
+    };
+
+    const handleEdit = (proposal) => {
+        setEditingProposal(proposal);
+        setView('calculator');
+    };
+
+    const handleView = (proposal) => {
+        setView('viewDetails', proposal);
+    };
+
+    const handlePrint = (proposal) => {
+        setProposalToPrint(proposal);
+    };
+
+    const handleConfirmPrint = (options) => {
+        setView('printPreview', { proposal: proposalToPrint, options });
+        setProposalToPrint(null);
+    };
+
+    const confirmDelete = async (userId) => {
+        if (!userId || !proposalToDelete) {
+            setNotification("Erro: Não foi possível identificar a proposta a apagar.");
+            return;
+        }
+        
+        try {
+            const collectionPath = `artifacts/${firebaseConfig.projectId}/users/${userId}/proposals`;
+            await deleteDoc(doc(db, collectionPath, proposalToDelete));
+            setNotification("Proposta apagada com sucesso.");
+            setProposalToDelete(null); // Fecha o painel de confirmação
+        } catch (e) {
+            console.error("Erro ao apagar a proposta: ", e);
+            setNotification("Ocorreu um erro ao apagar a proposta.");
+            setProposalToDelete(null);
+        }
+    };
+
+    const handleCopy = async (proposalToCopy, userId) => {
+        if (!userId) {
+            setNotification("Não foi possível identificar o utilizador.");
+            return;
+        }
+        const { id, ref, ...restOfProposal } = proposalToCopy;
+        const year = new Date().getFullYear();
+        const serviceCode = serviceCodes[restOfProposal.service] || 'XXX';
+        const newRef = `K2000-${Date.now().toString().slice(-6)}-${year}-${serviceCode}`;
+
+        const newProposalData = {
+            ...restOfProposal,
+            ref: newRef,
+            buildingName: `${restOfProposal.buildingName} (Cópia)`,
+            userId: userId,
+            timestamp: new Date().toISOString(),
+        };
+        try {
+            const collectionPath = `artifacts/${firebaseConfig.projectId}/users/${userId}/proposals`;
+            await addDoc(collection(db, collectionPath), newProposalData);
+            setNotification(`Proposta copiada com sucesso! Nova Ref: ${newProposalData.ref}`);
+        } catch (e) {
+            console.error("Erro ao copiar a proposta: ", e);
+            setNotification("Ocorreu um erro ao copiar a proposta.");
+        }
+    };
+    
+    const formatCurrency = (value) => value ? value.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }) : '€0.00';
+
+    return (
+        <>
+            {proposalToPrint && (
+                <PrintOptionsModal 
+                    onConfirm={handleConfirmPrint}
+                    onCancel={() => setProposalToPrint(null)}
+                />
+            )}
+            {selectedProposalForAction && (
+                <ActionPopup
+                    proposal={selectedProposalForAction}
+                    onClose={() => setSelectedProposalForAction(null)}
+                    onView={handleView}
+                    onPrint={handlePrint}
+                    onCopy={(p) => handleCopy(p, auth.currentUser.uid)}
+                    onEdit={handleEdit}
+                    onDelete={setProposalToDelete}
+                    isGuest={isGuest}
+                />
+            )}
+
+            <div className="p-4 max-w-md mx-auto bg-white rounded-2xl shadow-lg">
+                <div className="text-center mb-4">
+                    <h1 className="text-2xl font-bold text-gray-900">{showSummary ? 'Lista Resumida de Orçamentos' : 'Propostas Guardadas'}</h1>
+                </div>
+                
+                {!showSummary && (
+                    <div className="mb-4">
+                        <button onClick={() => setShowFilters(!showFilters)} className="w-full text-sm bg-gray-100 p-2 rounded-lg">
+                            {showFilters ? 'Ocultar Filtros' : 'Mostrar Filtros'}
+                        </button>
+                        {showFilters && (
+                            <div className="p-3 bg-gray-50 rounded-b-lg text-sm space-y-3 mt-1">
+                                <select name="service" value={filters.service} onChange={handleFilterChange} className="w-full p-2 border rounded-lg">
+                                    <option value="">Todos os Serviços</option>
+                                    {Object.keys(serviceCodes).map(s => <option key={s} value={s} className="capitalize">{s.replace('-', ' ')}</option>)}
+                                </select>
+                                <select name="companyName" value={filters.companyName} onChange={handleFilterChange} className="w-full p-2 border rounded-lg">
+                                    <option value="">Todas as Empresas</option>
+                                    {companyNames.map(name => <option key={name} value={name}>{name}</option>)}
+                                </select>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <input type="date" name="dateFrom" value={filters.dateFrom} onChange={handleFilterChange} className="w-full p-2 border rounded-lg" />
+                                    <input type="date" name="dateTo" value={filters.dateTo} onChange={handleFilterChange} className="w-full p-2 border rounded-lg" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <input type="number" name="minTotal" placeholder="Valor Mín." value={filters.minTotal} onChange={handleFilterChange} className="w-full p-2 border rounded-lg" />
+                                    <input type="number" name="maxTotal" placeholder="Valor Máx." value={filters.maxTotal} onChange={handleFilterChange} className="w-full p-2 border rounded-lg" />
+                                </div>
+                                <button onClick={clearFilters} className="w-full text-xs text-gray-600 hover:text-blue-600 p-1">Limpar Filtros</button>
+                            </div>
+                        )}
+                    </div>
+                )}
+                
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                {proposals.length === 0 ? (
+                     <p className="text-center text-gray-500 py-8">Nenhuma proposta guardada.</p>
+                ) : !showSummary ? (
+                    filteredProposals.length === 0 ? (
+                        <p className="text-center text-gray-500 py-8">Nenhuma proposta encontrada com os filtros atuais.</p>
+                    ) : (
+                    filteredProposals.map(p => (
+                        <div key={p.id} className={`p-3 border rounded-lg transition-all relative ${selected.includes(p.id) ? 'bg-blue-50 border-blue-600 ring-2 ring-blue-300' : 'hover:bg-gray-50'}`}>
+                            <div className="flex justify-between items-start">
+                                <div className="flex-grow cursor-pointer" onClick={() => handleSelect(p.id)}>
+                                    <p className="font-bold">{p.ref || p.id.slice(0, 8)} - {p.buildingName}</p>
+                                    <p className="text-sm text-gray-700">{p.clientName}</p>
+                                    <p className="text-xs text-gray-500 capitalize">{p.service.replace('-', ' ')} - {p.buildingType}</p>
+                                    <p className="text-xs text-gray-500">{p.location} - {new Date(p.timestamp).toLocaleDateString('pt-PT')}</p>
+                                </div>
+                                <div className="text-right flex-shrink-0 ml-2">
+                                    <p className="font-bold text-blue-700">{formatCurrency(p.total)}</p>
+                                    <div className="flex flex-col items-end gap-1 mt-1">
+                                        <div className="flex gap-1 flex-wrap justify-end">
+                                            <button onClick={() => handleView(p)} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded hover:bg-green-200">Ver</button>
+                                            <button 
+                                                onClick={() => handlePrint(p)} 
+                                                className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded hover:bg-purple-200"
+                                            >Imprimir</button>
+                                            <button 
+                                                onClick={() => handleCopy(p, auth.currentUser.uid)} 
+                                                className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded hover:bg-yellow-200"
+                                            >Copiar</button>
+                                            <button 
+                                                onClick={() => handleEdit(p)} 
+                                                className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded hover:bg-blue-200"
+                                            >Editar</button>
+                                            <button 
+                                                onClick={() => setProposalToDelete(p.id)} 
+                                                className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded hover:bg-red-200"
+                                            >Apagar</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {proposalToDelete === p.id && (
+                                <div className="absolute inset-0 bg-red-500 bg-opacity-90 flex flex-col items-center justify-center rounded-lg p-4">
+                                    <p className="text-white font-bold text-center mb-4">Tem a certeza que quer apagar esta proposta?</p>
+                                    <div className="flex gap-4">
+                                        <button onClick={() => confirmDelete(auth.currentUser.uid)} className="bg-white text-red-600 font-bold px-4 py-1 rounded">Confirmar</button>
+                                        <button onClick={() => setProposalToDelete(null)} className="bg-transparent border border-white text-white font-bold px-4 py-1 rounded">Cancelar</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ))
+                )) : (
+                    proposals.length === 0 ? (
+                         <p className="text-center text-gray-500 py-8">Nenhuma proposta guardada.</p>
+                    ) : (
+                    proposals.map(p => (
+                        <div key={p.id} className="border-b py-2 px-1 cursor-pointer hover:bg-gray-100 rounded" onClick={() => setSelectedProposalForAction(p)}>
+                            <div className="flex justify-between text-xs text-gray-600">
+                                <span>{new Date(p.timestamp).toLocaleDateString('pt-PT')}</span>
+                                <span className="font-semibold">{p.ref}</span>
+                            </div>
+                            <div className="flex justify-between items-center mt-1">
+                                <span className="font-bold text-sm truncate pr-2" title={`${p.clientName} | ${p.service.replace('-', ' ')}`}>
+                                    {p.clientName} <span className="text-gray-500 font-normal">({p.service.replace('-', ' ')})</span>
+                                </span>
+                                <span className="font-bold text-blue-700 text-sm">{formatCurrency(p.total)}</span>
+                            </div>
+                        </div>
+                    )))
+                )}
+                </div>
+
+
+                <div className="pt-4 flex flex-col gap-2">
+                    <button onClick={handleCompare} disabled={selected.length < 2 || showSummary}
+                            className="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-all disabled:bg-gray-300 disabled:cursor-not-allowed">
+                        Comparar ({selected.length})
+                    </button>
+                    <button onClick={() => setShowSummary(!showSummary)}
+                            className="w-full bg-teal-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-teal-700 transition-all">
+                        {showSummary ? 'Ver Vista Detalhada' : 'Lista de Orçamentos'}
+                    </button>
+                    <button onClick={() => setView('menu')} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all">
+                        Voltar ao Menu
+                    </button>
+                </div>
+            </div>
+        </>
+    );
+};
+
+const ComparisonView = ({ proposals, setView }) => {
+    const formatCurrency = (value) => value ? value.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }) : '€0.00';
+
+    const fields = [
+        { label: 'Referência', key: 'ref' },
+        { label: 'Cliente', key: 'clientName' },
+        { label: 'Empresa', key: 'companyName' },
+        { label: 'Edifício', key: 'buildingName' },
+        { label: 'Serviço', key: 'service', transform: (val) => <span className="capitalize">{val.replace('-', ' ')}</span> },
+        { label: 'Localização', key: 'location' },
+        { label: 'Tipologia', key: 'buildingType' },
+        { label: 'Subtipologia', key: 'buildingSubtype' },
+        { label: 'Fator de Complexidade', key: 'mainComplexity', transform: (val) => `${val.toFixed(2)}x` },
+        { label: 'Área Total', key: 'total', transform: (val, p) => `${p.mainArea + p.totalAuxArea} m²` },
+        { label: 'Horas Totais', key: 'estimatedHours', transform: (val) => `${val} h` },
+        { label: 'Custo Total', key: 'total', transform: (val) => <span className="font-bold text-blue-700">{formatCurrency(val)}</span> },
+        { 
+            label: '€/m²', 
+            key: 'total', 
+            transform: (val, p) => {
+                const totalArea = p.mainArea + p.totalAuxArea;
+                return totalArea > 0 ? formatCurrency(p.total / totalArea) : 'N/A';
+            } 
+        },
+    ];
+
+    return (
+        <div className="p-2 sm:p-4 max-w-md mx-auto bg-white rounded-2xl shadow-lg">
+            <div className="text-center mb-4">
+                <h1 className="text-2xl font-bold text-gray-900">Comparar Propostas</h1>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-gray-100">
+                        <tr>
+                            <th className="p-2 font-semibold">Característica</th>
+                            {proposals.map(p => <th key={p.id} className="p-2 font-semibold text-center">{p.ref || p.id.slice(0, 4)}</th>)}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {fields.map(field => (
+                            <tr key={field.label} className="border-b">
+                                <td className="p-2 font-medium">{field.label}</td>
+                                {proposals.map(p => (
+                                    <td key={`${p.id}-${field.label}`} className="p-2 text-center">
+                                        {field.transform ? field.transform(p[field.key], p) : p[field.key]}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <div className="pt-4">
+                <button onClick={() => setView('list')} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all">
+                    Voltar à Lista
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const BarChart = ({ title, data, dataKey, labelKey, unit = '', color = 'bg-blue-500' }) => {
+    const maxValue = useMemo(() => Math.max(...data.map(d => d[dataKey]), 0), [data, dataKey]);
+
+    return (
+        <div className="bg-white p-4 rounded-xl shadow">
+            <h3 className="font-bold text-gray-800 text-center mb-4">{title}</h3>
+            <div className="space-y-2">
+                {data.map((item, index) => (
+                    <div key={index} className="grid grid-cols-3 items-center gap-2 text-sm">
+                        <div className="truncate text-gray-600" title={item[labelKey]}>{item[labelKey]}</div>
+                        <div className="col-span-2 bg-gray-200 rounded-full h-6">
+                            <div
+                                className={`${color} h-6 rounded-full flex items-center justify-end px-2 text-white font-bold text-xs`}
+                                style={{ width: `${maxValue > 0 ? (item[dataKey] / maxValue) * 100 : 0}%` }}
+                            >
+                                {item[dataKey].toLocaleString('pt-PT')}{unit}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const DashboardView = ({ setView, proposals }) => {
+    const formatCurrency = (value) => value ? value.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }) : '€0.00';
+
+    const stats = useMemo(() => {
+        if (!proposals || proposals.length === 0) {
+            return {
+                totalFaturado: 0,
+                totalPropostas: 0,
+                mediaProposta: 0,
+                totalHoras: 0,
+            };
+        }
+        const totalFaturado = proposals.reduce((acc, p) => acc + p.total, 0);
+        const totalPropostas = proposals.length;
+        const mediaProposta = totalFaturado / totalPropostas;
+        const totalHoras = proposals.reduce((acc, p) => acc + p.estimatedHours, 0);
+        return { totalFaturado, totalPropostas, mediaProposta, totalHoras };
+    }, [proposals]);
+
+    const processData = (key, value) => {
+        return proposals.reduce((acc, p) => {
+            const groupKey = p[key] || 'N/A';
+            if (!acc[groupKey]) {
+                acc[groupKey] = 0;
+            }
+            acc[groupKey] += p[value];
+            return acc;
+        }, {});
+    };
+    
+    const processDataByYear = (value) => {
+        return proposals.reduce((acc, p) => {
+            const year = new Date(p.timestamp).getFullYear();
+            if (!acc[year]) {
+                acc[year] = 0;
+            }
+            acc[year] += p[value];
+            return acc;
+        }, {});
+    };
+
+    const chartData = useMemo(() => {
+        const dataToChart = (data, labelKey, dataKey) => Object.entries(data)
+            .map(([key, value]) => ({ [labelKey]: key, [dataKey]: value }))
+            .sort((a, b) => b[dataKey] - a[dataKey]);
+
+        const valorPorAno = dataToChart(processDataByYear('total'), 'ano', 'valor');
+        const horasPorAno = dataToChart(processDataByYear('estimatedHours'), 'ano', 'horas');
+        
+        const valorPorServico = dataToChart(processData('service', 'total'), 'servico', 'valor');
+        const horasPorServico = dataToChart(processData('service', 'estimatedHours'), 'servico', 'horas');
+        
+        const valorPorCliente = dataToChart(processData('clientName', 'total'), 'cliente', 'valor').slice(0, 5);
+        const horasPorCliente = dataToChart(processData('clientName', 'estimatedHours'), 'cliente', 'horas').slice(0, 5);
+
+        return { valorPorAno, horasPorAno, valorPorServico, horasPorServico, valorPorCliente, horasPorCliente };
+    }, [proposals]);
+
+    return (
+        <div className="p-2">
+            <div className="text-center mb-4">
+                <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+            </div>
+            
+            {proposals.length === 0 ? (
+                <div className="text-center text-gray-500 py-16 bg-white rounded-xl shadow">
+                    <p>Não existem propostas para apresentar dados.</p>
+                    <p className="mt-2 text-sm">Crie uma nova proposta para começar a ver as estatísticas.</p>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-2 gap-4 text-center">
+                        <div className="bg-white p-4 rounded-xl shadow">
+                            <h3 className="text-sm text-gray-500">Total Faturado</h3>
+                            <p className="text-2xl font-bold text-blue-600">{formatCurrency(stats.totalFaturado)}</p>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl shadow">
+                            <h3 className="text-sm text-gray-500">Nº Propostas</h3>
+                            <p className="text-2xl font-bold text-blue-600">{stats.totalPropostas}</p>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl shadow">
+                            <h3 className="text-sm text-gray-500">Média / Proposta</h3>
+                            <p className="text-2xl font-bold text-blue-600">{formatCurrency(stats.mediaProposta)}</p>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl shadow">
+                            <h3 className="text-sm text-gray-500">Total Horas</h3>
+                            <p className="text-2xl font-bold text-blue-600">{stats.totalHoras.toLocaleString('pt-PT')} h</p>
+                        </div>
+                    </div>
+                    
+                    {/* Charts */}
+                    <BarChart title="Faturação por Ano" data={chartData.valorPorAno} labelKey="ano" dataKey="valor" unit="€" color="bg-green-500" />
+                    <BarChart title="Horas por Ano" data={chartData.horasPorAno} labelKey="ano" dataKey="horas" unit="h" color="bg-green-500" />
+                    
+                    <BarChart title="Faturação por Serviço" data={chartData.valorPorServico} labelKey="servico" dataKey="valor" unit="€" color="bg-indigo-500" />
+                    <BarChart title="Horas por Serviço" data={chartData.horasPorServico} labelKey="servico" dataKey="horas" unit="h" color="bg-indigo-500" />
+
+                    <BarChart title="Top 5 Clientes (Faturação)" data={chartData.valorPorCliente} labelKey="cliente" dataKey="valor" unit="€" color="bg-amber-500" />
+                    <BarChart title="Top 5 Clientes (Horas)" data={chartData.horasPorCliente} labelKey="cliente" dataKey="horas" unit="h" color="bg-amber-500" />
+
+                </div>
+            )}
+            
+            <div className="pt-4 mt-2">
+                <button onClick={() => setView('menu')} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all">
+                    Voltar ao Menu
+                </button>
+            </div>
+        </div>
+    );
+};
+
+
+export default function App() {
+    const [view, setView] = useState('');
+    const [viewPayload, setViewPayload] = useState(null);
+    const [currentProposal, setCurrentProposal] = useState(null);
+    const [editingProposal, setEditingProposal] = useState(null);
+    const [user, setUser] = useState(null);
+    const [authReady, setAuthReady] = useState(false);
+    const [notification, setNotification] = useState('');
+    const [isGuest, setIsGuest] = useState(false);
+    const [proposals, setProposals] = useState([]);
+    const [loadingProposals, setLoadingProposals] = useState(true);
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
+            setAuthReady(true);
+            if (currentUser) {
+                 if(!isGuest) setView('menu');
+            } else {
+                setIsGuest(false);
+                setProposals([]);
+                setView('authMenu');
+            }
+        });
+        return () => unsubscribe();
+    }, [isGuest]);
+    
+    useEffect(() => {
+        if (user && user.uid) {
+            setLoadingProposals(true);
+            const collectionPath = `artifacts/${firebaseConfig.projectId}/users/${user.uid}/proposals`;
+            const unsubscribe = onSnapshot(collection(db, collectionPath), (querySnapshot) => {
+                const props = [];
+                querySnapshot.forEach((doc) => {
+                    props.push({ id: doc.id, ...doc.data() });
+                });
+                setProposals(props);
+                setLoadingProposals(false);
+            }, (error) => {
+                console.error("Erro ao carregar propostas: ", error);
+                setLoadingProposals(false);
+            });
+            return () => unsubscribe();
+        }
+    }, [user]);
+
+    useEffect(() => {
+        if(notification) {
+            const timer = setTimeout(() => {
+                setNotification('');
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [notification]);
+
+    const handleSetView = (viewName, payload = null) => {
+        setView(viewName);
+        setViewPayload(payload);
+    };
+    
+    const handleCalculate = (proposalData) => {
+        setCurrentProposal(proposalData);
+        handleSetView('proposal');
+    };
+
+    const handleFinishEditing = () => {
+        setEditingProposal(null);
+        handleSetView('list');
+    };
+
+    const handleClearEditing = () => {
+        setEditingProposal(null);
+    }
+
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+            setNotification('Sessão terminada.');
+        } catch (error) {
+            setNotification('Erro ao terminar a sessão.');
+        }
+    };
+
+    const handleGuestLogin = async () => {
+        try {
+            await signInAnonymously(auth);
+            setIsGuest(true);
+            setView('menu');
+            setNotification('A utilizar a aplicação como convidado.');
+        } catch (error) {
+            console.error("Guest sign-in failed:", error);
+            if (error.code === 'auth/admin-restricted-operation' || error.code === 'auth/operation-not-allowed') {
+                setNotification("O modo convidado está desativado. Por favor, ative o login Anónimo na sua consola Firebase.");
+            } else {
+                setNotification("Não foi possível entrar como convidado.");
+            }
+        }
+    };
+
+    const renderView = () => {
+        if (!authReady) {
+            return <div className="flex justify-center items-center h-full"><p>A carregar...</p></div>;
+        }
+        
+        switch (view) {
+            case 'authMenu':
+                return <AuthMenuView setView={handleSetView} handleGuestLogin={handleGuestLogin} />;
+            case 'login':
+                return <LoginView setView={handleSetView} setNotification={setNotification} />;
+            case 'register':
+                return <RegisterView setView={handleSetView} setNotification={setNotification} />;
+            case 'menu':
+                 if (!user) return <AuthMenuView setView={handleSetView} handleGuestLogin={handleGuestLogin} />;
+                return <MenuView setView={handleSetView} user={user} handleLogout={handleLogout} isGuest={isGuest} />;
+            case 'proposal':
+                return <ProposalView proposal={currentProposal} onSave={handleFinishEditing} onBack={() => setView(editingProposal ? 'list' : 'calculator')} userId={user.uid} setNotification={setNotification} isGuest={isGuest} />;
+            case 'list':
+                 if (loadingProposals) return <div className="text-center p-4">A carregar propostas...</div>
+                return <ProposalList proposals={proposals} setView={handleSetView} setEditingProposal={setEditingProposal} userId={user.uid} setNotification={setNotification} isGuest={isGuest} />;
+            case 'dashboard':
+                if (loadingProposals) return <div className="text-center p-4">A carregar dados do dashboard...</div>
+                return <DashboardView proposals={proposals} setView={handleSetView} />;
+            case 'compare':
+                return <ComparisonView proposals={viewPayload} setView={handleSetView} />;
+            case 'viewDetails':
+                return <ViewProposalDetails proposal={viewPayload} setView={handleSetView} />;
+            case 'printPreview':
+                return <PrintPreview proposal={viewPayload.proposal} options={viewPayload.options} onBack={() => handleSetView('list')} />;
+            case 'calculator':
+            default:
+                 if (!user) return <AuthMenuView setView={handleSetView} handleGuestLogin={handleGuestLogin} />;
+                return <CalculatorForm onCalculate={handleCalculate} setView={handleSetView} editingProposal={editingProposal} clearEditing={handleClearEditing} setNotification={setNotification} />;
+        }
+    };
+
+    return (
+        <div className="bg-gray-100 min-h-screen flex items-center justify-center font-sans">
+             {notification && (
+                <div className="fixed top-5 right-5 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
+                    {notification}
+                </div>
+            )}
+            <div className="w-full max-w-md" style={{ aspectRatio: '9 / 16' }}>
+                <div className="bg-gray-50 h-full w-full overflow-y-auto rounded-3xl shadow-2xl p-2">
+                    {renderView()}
+                </div>
+            </div>
+        </div>
+    );
+}
+
