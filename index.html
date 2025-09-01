@@ -83,6 +83,18 @@
             aux: { avac: 1, certificado: 0.5, "pre-certificado": 0.25 },
             aux_floor: { avac: 0.5, certificado: 0.25, "pre-certificado": 0.10 }
         };
+        const avacInstallationCosts = {
+            "Comércio": { "Loja de rua": 150, "Centro comercial": 200, "Supermercado / Hipermercado": 250, "Quiosque / Stand": 120, "Showroom": 180 },
+            "Escritórios": { "Escritórios administrativos": 160, "Escritórios técnicos / engenharia": 190, "Call center": 220, "Escritório co-working": 150 },
+            "Serviços": { "Balcão de atendimento": 140, "Bancos": 170, "Câmaras municipais": 200, "Correios": 150, "Serviços jurídicos / cartórios": 160 },
+            "Hotelaria e Restauração": { "Hotel 3★": 200, "Hotel 4★/5★": 280, "Hostel": 170, "Pousada": 220, "Restaurante": 250, "Bar / Cafetaria": 180, "Refeitório industrial": 260 },
+            "Ensino": { "Jardim de infância": 150, "Escola básica (1.º/2.º ciclo)": 160, "Escola secundária": 170, "Escola profissional / técnica": 190, "Universidade / Instituto Politécnico": 220, "Centros de formação": 150 },
+            "Saúde": { "Hospital público": 280, "Hospital privado": 300, "Clínica médica": 240, "Centro de saúde": 220, "Laboratório de análises": 290, "Unidade de hemodiálise": 300, "Farmácia": 180 },
+            "Desporto e Lazer": { "Ginásio / Health club": 160, "Piscina interior": 250, "Pavilhão desportivo": 200, "Estádio / Campo de jogos": 220, "SPA / Centro de bem-estar": 280, "Salão de jogos / Bingo": 170 },
+            "Cultura": { "Biblioteca": 170, "Auditório / Sala de espetáculos": 250, "Museu": 200, "Galeria de arte": 180, "Centro cultural": 190 },
+            "Transportes": { "Estação ferroviária": 220, "Estação rodoviária": 210, "Aeroporto": 300, "Interface intermodal": 250, "Parque de estacionamento coberto": 120 },
+            "Indústria e Armazéns": { "Indústria ligeira (montagem, embalamento)": 180, "Indústria pesada (metalomecânica, química)": 250, "Armazém logístico": 140, "Câmara frigorífica": 300, "Oficina de manutenção": 170, "Centro de distribuição": 160 }
+        };
         const serviceTasks = {
             avac: [
                 { name: 'Reunião inicial e levantamento de dados', percentage: 0.10, details: ['Análise do programa preliminar e/ou projeto de arquitetura.', 'Visita ao local para levantamento de condicionantes.', 'Recolha de dados de especialidades relevantes.'] },
@@ -189,7 +201,29 @@
                 cumulativeHours += taskHours;
                 return { name: task.name, details: task.details || [], hours: taskHours.toFixed(1), startWeek: Math.floor(startDay / 5) + 1, durationWeeks: Math.max(1, Math.ceil(durationDays / 5)) };
             });
-            return { ...formData, mainComplexity, mainCost, auxCost, totalAuxArea, selectedAuxSpaces, travelCost, travelDays, distanceCost, accommodationCost, subtotal, finalSubtotal, vat, total, estimatedHours, teamBreakdown, schedule, timestamp: new Date().toISOString() };
+            
+            let totalAvacInstallationCost = null;
+            let projectToWorkRatio = null;
+            let avacCostBreakdown = null;
+
+            if (service === 'avac') {
+                const costPerM2 = avacInstallationCosts[buildingType]?.[buildingSubtype] || 120;
+                const totalAreaForAvac = mainArea + totalAuxArea;
+                totalAvacInstallationCost = costPerM2 * totalAreaForAvac;
+                 avacCostBreakdown = [{
+                    typology: buildingType,
+                    subTypology: buildingSubtype,
+                    area: totalAreaForAvac,
+                    costPerM2: costPerM2,
+                    totalCost: totalAvacInstallationCost
+                }];
+
+                if (totalAvacInstallationCost > 0) {
+                    projectToWorkRatio = (finalSubtotal / totalAvacInstallationCost) * 100;
+                }
+            }
+            
+            return { ...formData, mainComplexity, mainCost, auxCost, totalAuxArea, selectedAuxSpaces, travelCost, travelDays, distanceCost, accommodationCost, subtotal, finalSubtotal, vat, total, estimatedHours, teamBreakdown, schedule, totalAvacInstallationCost, avacCostBreakdown, projectToWorkRatio, timestamp: new Date().toISOString() };
         };
 
         // --- Componentes ---
@@ -361,7 +395,6 @@
             const weekHeaders = Array.from({ length: totalWeeks }, (_, i) => i + 1);
             return (
                 <div className="space-y-2 text-sm">
-                    <p><strong>Data de Início Prevista:</strong> {new Date(startDate).toLocaleDateString('pt-PT')}</p>
                     <div className="overflow-x-auto">
                         <div className="grid gap-y-2" style={{ gridTemplateColumns: `minmax(150px, 1.5fr) repeat(${totalWeeks}, 1fr)` }}>
                             <div className="font-semibold border-b pb-1">Tarefa</div>{weekHeaders.map(week => (<div key={week} className="text-center font-semibold border-b pb-1 text-xs">Sem. {week}</div>))}
@@ -371,6 +404,38 @@
                 </div>
             );
         };
+        const AvacCostTable = ({ breakdown, formatCurrency }) => {
+            if (!breakdown || breakdown.length === 0) return null;
+            return (
+                <div className="mt-4 overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-gray-100">
+                            <tr>
+                                <th className="p-2 font-semibold">Tipologia</th>
+                                <th className="p-2 font-semibold">Área (m²)</th>
+                                <th className="p-2 font-semibold text-right">Custo/m²</th>
+                                <th className="p-2 font-semibold text-right">Custo Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {breakdown.map((item, index) => (
+                                <tr key={index} className="border-b">
+                                    <td className="p-2">
+                                        {item.typology}
+                                        <br/>
+                                        <span className="text-xs text-gray-500">{item.subTypology}</span>
+                                    </td>
+                                    <td className="p-2">{item.area.toLocaleString('pt-PT')}</td>
+                                    <td className="p-2 text-right">{formatCurrency(item.costPerM2)}</td>
+                                    <td className="p-2 text-right font-semibold">{formatCurrency(item.totalCost)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        };
+
         const ProposalView = ({ proposal, onSave, onBack, userId, setNotification, isGuest }) => {
             const formatCurrency = (value) => value ? value.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }) : '€0.00';
             const handleSaveOrUpdate = async () => {
@@ -398,7 +463,24 @@
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">2. Áreas e Complexidade</h3><div className="space-y-1"><p><strong>Área Principal:</strong> {proposal.mainArea} m²</p><p><strong>Área Auxiliar:</strong> {proposal.totalAuxArea} m²</p><p><strong>Área Total:</strong> <strong className="text-blue-700">{proposal.mainArea + proposal.totalAuxArea} m²</strong></p><p><strong>Fator de Complexidade:</strong> {proposal.mainComplexity.toFixed(2)}x</p></div>{proposal.selectedAuxSpaces && proposal.selectedAuxSpaces.length > 0 && (<div className="mt-2"><h4 className="font-semibold">Espaços Auxiliares:</h4><ul className="list-disc list-inside pl-2">{proposal.selectedAuxSpaces.map(space => (<li key={space.name}>{space.name}: {space.area} m²</li>))}</ul></div>)}</section>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3><div className="bg-gray-100 p-3 rounded-lg space-y-2"><div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div><div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>{proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}<hr /><div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div><div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div><div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div></div></section>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">4. Detalhe de Horas e Custos</h3><div className="space-y-1"><p><strong>Total de Horas Estimadas:</strong> {proposal.estimatedHours} h</p>{proposal.teamBreakdown && (<> <h4 className="font-semibold pt-2">Horas por Técnico:</h4><ul className="list-disc list-inside pl-2">{Object.entries(proposal.teamBreakdown).map(([role, data]) => (<li key={role}>{role}: {data.hours} h</li>))}</ul> </>)}{proposal.service === 'certificado' && proposal.travelCost > 0 && (<div className="mt-2"><h4 className="font-semibold pt-2">Detalhe de Deslocação:</h4><p>Custo de Deslocação (km): {formatCurrency(proposal.distanceCost)}</p><p>Custo de Estadia ({proposal.travelDays} dias): {formatCurrency(proposal.accommodationCost)}</p></div>)}</div></section>
-                    <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3><ScheduleGantt schedule={proposal.schedule} startDate={proposal.timestamp} /></section>
+                    <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3><ScheduleGantt schedule={proposal.schedule} startDate={proposal.startDate} /></section>
+                    {proposal.service === 'avac' && proposal.totalAvacInstallationCost != null && (
+                        <section className="my-4 text-sm">
+                            <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">6. Estimativa de Custo de Obra (AVAC)</h3>
+                            <div className="bg-gray-100 p-3 rounded-lg space-y-2">
+                                <div className="flex justify-between">
+                                    <span>Valor Estimado da Obra</span>
+                                    <span className="font-bold">{formatCurrency(proposal.totalAvacInstallationCost)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Rácio Custo Projeto / Custo Obra</span>
+                                    <span className="font-bold text-teal-600">{proposal.projectToWorkRatio.toFixed(2)}%</span>
+                                </div>
+                            </div>
+                            <AvacCostTable breakdown={proposal.avacCostBreakdown} formatCurrency={formatCurrency} />
+                            <p className="text-xs text-gray-500 mt-2 italic">Nota: O valor de obra é uma estimativa com base na complexidade do projeto e serve apenas como referência.</p>
+                        </section>
+                    )}
                     <div className="pt-4 flex flex-col gap-2"><button onClick={handleSaveOrUpdate} className="w-full bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed" disabled={isGuest} title={isGuest ? 'Crie uma conta para guardar as suas propostas' : ''}>{proposal.id ? 'Atualizar Proposta' : 'Guardar Proposta'}</button><button onClick={onBack} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all">{proposal.id ? 'Voltar à Lista' : 'Editar Dados'}</button></div>
                 </div>
             );
@@ -412,15 +494,32 @@
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">2. Áreas e Complexidade</h3><div className="space-y-1"><p><strong>Área Principal:</strong> {proposal.mainArea} m²</p><p><strong>Área Auxiliar:</strong> {proposal.totalAuxArea} m²</p><p><strong>Área Total:</strong> <strong className="text-blue-700">{proposal.mainArea + proposal.totalAuxArea} m²</strong></p><p><strong>Fator de Complexidade:</strong> {proposal.mainComplexity.toFixed(2)}x</p></div>{proposal.selectedAuxSpaces && proposal.selectedAuxSpaces.length > 0 && (<div className="mt-2"><h4 className="font-semibold">Espaços Auxiliares:</h4><ul className="list-disc list-inside pl-2">{proposal.selectedAuxSpaces.map(space => (<li key={space.name}>{space.name}: {space.area} m²</li>))}</ul></div>)}</section>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3><div className="bg-gray-100 p-3 rounded-lg space-y-2"><div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div><div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>{proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}<hr /><div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div><div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div><div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div></div></section>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">4. Detalhe de Horas e Custos</h3><div className="space-y-1"><p><strong>Total de Horas Estimadas:</strong> {proposal.estimatedHours || 'N/A'} h</p>{proposal.teamBreakdown && (<> <h4 className="font-semibold pt-2">Horas por Técnico:</h4><ul className="list-disc list-inside pl-2">{Object.entries(proposal.teamBreakdown).map(([role, data]) => (<li key={role}>{role}: {data.hours} h</li>))}</ul> </>)}{proposal.service === 'certificado' && proposal.travelCost > 0 && (<div className="mt-2"><h4 className="font-semibold pt-2">Detalhe de Deslocação:</h4><p>Custo de Deslocação (km): {formatCurrency(proposal.distanceCost)}</p><p>Custo de Estadia ({proposal.travelDays} dias): {formatCurrency(proposal.accommodationCost)}</p></div>)}</div></section>
-                    <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3><ScheduleGantt schedule={proposal.schedule} startDate={proposal.timestamp} /></section>
+                    <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3><ScheduleGantt schedule={proposal.schedule} startDate={proposal.startDate} /></section>
+                     {proposal.service === 'avac' && proposal.totalAvacInstallationCost != null && (
+                        <section className="my-4 text-sm">
+                            <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">6. Estimativa de Custo de Obra (AVAC)</h3>
+                            <div className="bg-gray-100 p-3 rounded-lg space-y-2">
+                                <div className="flex justify-between">
+                                    <span>Valor Estimado da Obra</span>
+                                    <span className="font-bold">{formatCurrency(proposal.totalAvacInstallationCost)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Rácio Custo Projeto / Custo Obra</span>
+                                    <span className="font-bold text-teal-600">{proposal.projectToWorkRatio.toFixed(2)}%</span>
+                                </div>
+                            </div>
+                            <AvacCostTable breakdown={proposal.avacCostBreakdown} formatCurrency={formatCurrency} />
+                             <p className="text-xs text-gray-500 mt-2 italic">Nota: O valor de obra é uma estimativa com base na complexidade do projeto e serve apenas como referência.</p>
+                        </section>
+                    )}
                     <div className="pt-4 flex flex-col gap-2"><button onClick={() => setView('list')} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all">Voltar à Lista</button></div>
                 </div>
             );
         };
         const PrintOptionsModal = ({ onConfirm, onCancel }) => {
-            const [options, setOptions] = useState({ headerFooter: true, projectData: true, areas: true, budgetSummary: true, hoursDetails: true, travelDetails: true, schedule: true });
+            const [options, setOptions] = useState({ headerFooter: true, projectData: true, areas: true, budgetSummary: true, hoursDetails: true, travelDetails: true, schedule: true, avacEstimate: true });
             const handleCheckboxChange = (e) => { const { name, checked } = e.target; setOptions(prev => ({ ...prev, [name]: checked })); };
-            const optionLabels = { headerFooter: 'Cabeçalho e Rodapé', projectData: 'Dados do Projeto', areas: 'Áreas e Complexidade', budgetSummary: 'Resumo do Orçamento', hoursDetails: 'Detalhe de Horas', travelDetails: 'Detalhe de Deslocação', schedule: 'Cronograma' };
+            const optionLabels = { headerFooter: 'Cabeçalho e Rodapé', projectData: 'Dados do Projeto', areas: 'Áreas e Complexidade', budgetSummary: 'Resumo do Orçamento', hoursDetails: 'Detalhe de Horas', travelDetails: 'Detalhe de Deslocação', schedule: 'Cronograma', avacEstimate: 'Estimativa Custo de Obra AVAC' };
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white p-6 rounded-2xl shadow-lg w-full max-w-sm">
@@ -486,7 +585,49 @@
                                 {options.areas && (<section className="my-4"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">2. Áreas e Complexidade</h3><div className="space-y-1"><p><strong>Área Principal:</strong> {proposal.mainArea} m²</p><p><strong>Área Auxiliar:</strong> {proposal.totalAuxArea} m²</p><p><strong>Área Total:</strong> <strong className="text-blue-700">{proposal.mainArea + proposal.totalAuxArea} m²</strong></p><p><strong>Fator de Complexidade:</strong> {proposal.mainComplexity.toFixed(2)}x</p></div>{proposal.selectedAuxSpaces && proposal.selectedAuxSpaces.length > 0 && (<div className="mt-2"><h4 className="font-semibold">Espaços Auxiliares:</h4><ul className="list-disc list-inside pl-2">{proposal.selectedAuxSpaces.map(space => (<li key={space.name}>{space.name}: {space.area} m²</li>))}</ul></div>)}</section>)}
                                 {options.budgetSummary && (<section className="my-4"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3><div className="bg-gray-100 p-3 rounded-lg space-y-2"><div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div><div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>{proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}<hr /><div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div><div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div><div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div></div></section>)}
                                 {(options.hoursDetails || (options.travelDetails && proposal.service === 'certificado')) && (<section className="my-4"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">4. Detalhe de Horas e Custos</h3>{options.hoursDetails && (<div className="space-y-1"><p><strong>Total de Horas Estimadas:</strong> {proposal.estimatedHours} h</p>{proposal.teamBreakdown && (<> <h4 className="font-semibold pt-2">Horas por Técnico:</h4><ul className="list-disc list-inside pl-2">{Object.entries(proposal.teamBreakdown).map(([role, data]) => (<li key={role}>{role}: {data.hours} h</li>))}</ul> </>)}</div>)}{options.travelDetails && proposal.service === 'certificado' && proposal.travelCost > 0 && (<div className="mt-2"><h4 className="font-semibold pt-2">Detalhe de Deslocação:</h4><p>Custo de Deslocação (km): {formatCurrency(proposal.distanceCost)}</p><p>Custo de Estadia ({proposal.travelDays} dias): {formatCurrency(proposal.accommodationCost)}</p></div>)}</section>)}
-                                {options.schedule && (<section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3><ScheduleGantt schedule={proposal.schedule} startDate={proposal.timestamp} /></section>)}
+                                {options.schedule && (<section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3><ScheduleGantt schedule={proposal.schedule} startDate={proposal.startDate} /></section>)}
+                                {options.avacEstimate && proposal.service === 'avac' && proposal.totalAvacInstallationCost != null && (
+                                    <section className="my-4 text-sm">
+                                        <h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">6. Estimativa de Custo de Obra (AVAC)</h3>
+                                        <div className="bg-gray-100 p-3 rounded-lg space-y-2">
+                                            <div className="flex justify-between">
+                                                <span>Valor Estimado da Obra</span>
+                                                <span className="font-bold">{formatCurrency(proposal.totalAvacInstallationCost)}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Rácio Custo Projeto / Custo Obra</span>
+                                                <span className="font-bold text-teal-600">{proposal.projectToWorkRatio.toFixed(2)}%</span>
+                                            </div>
+                                        </div>
+                                         <div className="mt-4 overflow-x-auto">
+                                            <table className="w-full text-left text-sm border-collapse">
+                                                <thead className="bg-gray-100">
+                                                    <tr>
+                                                        <th className="p-2 font-semibold border">Tipologia</th>
+                                                        <th className="p-2 font-semibold border">Área (m²)</th>
+                                                        <th className="p-2 font-semibold text-right border">Custo/m²</th>
+                                                        <th className="p-2 font-semibold text-right border">Custo Total</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {proposal.avacCostBreakdown.map((item, index) => (
+                                                        <tr key={index} className="border-b">
+                                                            <td className="p-2 border">
+                                                                {item.typology}
+                                                                <br/>
+                                                                <span className="text-xs text-gray-500">{item.subTypology}</span>
+                                                            </td>
+                                                            <td className="p-2 border">{item.area.toLocaleString('pt-PT')}</td>
+                                                            <td className="p-2 text-right border">{formatCurrency(item.costPerM2)}</td>
+                                                            <td className="p-2 text-right font-semibold border">{formatCurrency(item.totalCost)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-2 italic">Nota: O valor de obra é uma estimativa com base na complexidade do projeto e serve apenas como referência.</p>
+                                    </section>
+                                )}
                             </main>
                             {options.headerFooter && (<footer className="text-center pt-4 border-t mt-8 text-xs text-gray-500"><p>Koelho2000 lda</p><p>Rua da Boa Vontade 4, Barrunchal, 2710-151 Sintra</p><p>Telemóvel: 934021666 | Email: geral@koelho2000.com</p></footer>)}
                         </div>
