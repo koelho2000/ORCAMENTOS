@@ -150,7 +150,7 @@
         };
 
         const calculateQuote = (formData) => {
-            const { service, location, buildingType, buildingSubtype, mainArea, auxSpaces, factorK2000 } = formData;
+            const { service, location, buildingType, buildingSubtype, mainArea, auxSpaces, factorK2000, commercialDiscount = 0 } = formData;
             const baseComplexity = data.buildingTypes[buildingType][buildingSubtype];
             const mainComplexity = baseComplexity * factorK2000;
             const mainCostResult = calculateCostMain(service, mainArea, mainComplexity);
@@ -177,8 +177,11 @@
                 accommodationCost = travelDays * 350;
                 travelCost = distanceCost + accommodationCost;
             }
-            const subtotal = mainCost + auxCost + travelCost;
-            const finalSubtotal = Math.max(subtotal, 750);
+            const subtotalBeforeDiscount = mainCost + auxCost + travelCost;
+            const discountAmount = subtotalBeforeDiscount * (commercialDiscount / 100);
+            const subtotalAfterDiscount = subtotalBeforeDiscount - discountAmount;
+
+            const finalSubtotal = Math.max(subtotalAfterDiscount, 750);
             const vat = finalSubtotal * 0.23;
             const total = finalSubtotal + vat;
             const team = teamDistribution[service];
@@ -223,7 +226,16 @@
                 }
             }
             
-            return { ...formData, mainComplexity, mainCost, auxCost, totalAuxArea, selectedAuxSpaces, travelCost, travelDays, distanceCost, accommodationCost, subtotal, finalSubtotal, vat, total, estimatedHours, teamBreakdown, schedule, totalAvacInstallationCost, avacCostBreakdown, projectToWorkRatio, timestamp: new Date().toISOString() };
+            return { 
+                ...formData, 
+                mainComplexity, mainCost, auxCost, totalAuxArea, selectedAuxSpaces, 
+                travelCost, travelDays, distanceCost, accommodationCost, 
+                subtotalBeforeDiscount, discountAmount, commercialDiscount,
+                finalSubtotal, vat, total, 
+                estimatedHours, teamBreakdown, schedule, 
+                totalAvacInstallationCost, avacCostBreakdown, projectToWorkRatio, 
+                timestamp: new Date().toISOString() 
+            };
         };
 
         // --- Componentes ---
@@ -322,7 +334,7 @@
             </div>
         );
 
-        const defaultFormData = { clientName: '', companyName: '', buildingName: '', service: 'avac', location: 'Lisboa', buildingType: 'Comércio', buildingSubtype: 'Loja de rua', mainArea: 500, auxSpaces: {}, factorK2000: 1.0 };
+        const defaultFormData = { clientName: '', companyName: '', buildingName: '', service: 'avac', location: 'Lisboa', buildingType: 'Comércio', buildingSubtype: 'Loja de rua', mainArea: 500, auxSpaces: {}, factorK2000: 1.0, commercialDiscount: 0 };
 
         const CalculatorForm = ({ onCalculate, setView, editingProposal, clearEditing, setNotification }) => {
             const [formData, setFormData] = useState(defaultFormData);
@@ -384,6 +396,24 @@
                         <fieldset><legend className="text-lg font-semibold text-gray-800 mb-2">5. Área Principal</legend><div className="flex items-center gap-2"><input type="range" min="50" max="100000" step={formData.mainArea <= 1000 ? 5 : formData.mainArea <= 5000 ? 50 : 500} name="mainArea" value={formData.mainArea} onChange={(e) => setFormData(prev => ({ ...prev, mainArea: parseInt(e.target.value) || 50 }))} className="w-full" /><input type="number" min="50" max="100000" step={formData.mainArea <= 1000 ? 5 : formData.mainArea <= 5000 ? 50 : 500} value={formData.mainArea} onChange={(e) => setFormData(prev => ({ ...prev, mainArea: parseInt(e.target.value) || 50 }))} className="p-1 border border-gray-300 rounded-lg text-sm w-24 text-center" /><span className="text-sm text-gray-600">m²</span></div>{formData.service === 'certificado' && (<div className="pt-2"><p className="text-sm text-gray-600">Dias de Estadia: <span className="font-bold text-blue-700 ml-2">{travelInfo.days}</span></p></div>)}</fieldset>
                         <fieldset><legend className="text-lg font-semibold text-gray-800 mb-2">6. Espaços Auxiliares</legend><div className="space-y-3">{Object.keys(data.auxSpaces).map(space => (<div key={space}><label className="flex items-center gap-2 text-sm"><input type="checkbox" value={space} checked={!!formData.auxSpaces[space]} onChange={handleAuxCheckboxChange} />{space}</label>{formData.auxSpaces[space] !== undefined && (<div className="flex items-center gap-2 mt-1 pl-6"><input type="range" min="10" max="50000" step={formData.auxSpaces[space] <= 1000 ? 5 : formData.auxSpaces[space] <= 5000 ? 50 : 500} value={formData.auxSpaces[space]} onChange={(e) => handleAuxSliderChange(space, e.target.value)} className="w-full" /><input type="number" min="10" max="50000" step={formData.auxSpaces[space] <= 1000 ? 5 : formData.auxSpaces[space] <= 5000 ? 50 : 500} value={formData.auxSpaces[space]} onChange={(e) => handleAuxSliderChange(space, e.target.value)} className="p-1 border border-gray-300 rounded-lg text-sm w-20 text-center" /><span className="text-sm text-gray-600">m²</span></div>)}</div>))}</div></fieldset>
                         <fieldset><legend className="text-lg font-semibold text-gray-800 mb-2">7. Fator K2000</legend>{!isFactorUnlocked ? (<div className="flex items-center gap-2"><input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="p-2 border border-gray-300 rounded-lg text-sm" /><button type="button" onClick={() => { if (password === 'k2000') { setIsFactorUnlocked(true); setNotification('Fator K2000 desbloqueado.'); } else { setNotification('Password incorreta.'); } }} className="bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg">Desbloquear</button></div>) : (<div className="flex items-center gap-2"><input type="range" min="0.25" max="10" step="0.25" name="factorK2000" value={formData.factorK2000} onChange={(e) => setFormData(prev => ({ ...prev, factorK2000: parseFloat(e.target.value) }))} className="w-full" /><span className="font-bold text-blue-700 bg-blue-100 py-1 px-2 rounded-lg text-sm w-24 text-center">{Number(formData.factorK2000).toFixed(2)}</span></div>)}</fieldset>
+                        <fieldset>
+                            <legend className="text-lg font-semibold text-gray-800 mb-2">8. Desconto Comercial (%)</legend>
+                            <div className="flex items-center gap-2">
+                                <input 
+                                    type="range" 
+                                    min="0" 
+                                    max="50" 
+                                    step="1"
+                                    name="commercialDiscount" 
+                                    value={formData.commercialDiscount || 0} 
+                                    onChange={(e) => setFormData(prev => ({ ...prev, commercialDiscount: parseFloat(e.target.value) }))}
+                                    className="w-full" 
+                                />
+                                <span className="font-bold text-teal-700 bg-teal-100 py-1 px-2 rounded-lg text-sm w-24 text-center">
+                                    {Number(formData.commercialDiscount || 0).toFixed(0)} %
+                                </span>
+                            </div>
+                        </fieldset>
                         <div className="pt-4 flex flex-col gap-2"><button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-all">{editingProposal ? 'Atualizar e Ver Proposta' : 'Calcular Orçamento'}</button><button type="button" onClick={handleCancel} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all">Cancelar</button></div>
                     </form>
                 </div>
@@ -461,7 +491,26 @@
                     <div className="text-center mb-4"><h2 className="text-2xl font-bold text-blue-700">Proposta de Orçamento</h2>{proposal.ref && <p className="text-sm text-gray-500">Ref: {proposal.ref}</p>}</div>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">1. Dados do Projeto</h3><div className="space-y-1"><p><strong>Cliente:</strong> {proposal.clientName}</p>{proposal.companyName && <p><strong>Empresa:</strong> {proposal.companyName}</p>}<p><strong>Edifício:</strong> {proposal.buildingName}</p><p><strong>Serviço:</strong> <span className="capitalize">{proposal.service.replace('-', ' ')}</span></p><p><strong>Localização:</strong> {proposal.location}</p><p><strong>Tipologia:</strong> {proposal.buildingType}</p><p><strong>Subtipologia:</strong> {proposal.buildingSubtype}</p></div></section>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">2. Áreas e Complexidade</h3><div className="space-y-1"><p><strong>Área Principal:</strong> {proposal.mainArea} m²</p><p><strong>Área Auxiliar:</strong> {proposal.totalAuxArea} m²</p><p><strong>Área Total:</strong> <strong className="text-blue-700">{proposal.mainArea + proposal.totalAuxArea} m²</strong></p><p><strong>Fator de Complexidade:</strong> {proposal.mainComplexity.toFixed(2)}x</p></div>{proposal.selectedAuxSpaces && proposal.selectedAuxSpaces.length > 0 && (<div className="mt-2"><h4 className="font-semibold">Espaços Auxiliares:</h4><ul className="list-disc list-inside pl-2">{proposal.selectedAuxSpaces.map(space => (<li key={space.name}>{space.name}: {space.area} m²</li>))}</ul></div>)}</section>
-                    <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3><div className="bg-gray-100 p-3 rounded-lg space-y-2"><div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div><div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>{proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}<hr /><div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div><div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div><div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div></div></section>
+                    <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3>
+                        <div className="bg-gray-100 p-3 rounded-lg space-y-2">
+                            <div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div>
+                            <div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>
+                            {proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}
+                            <hr />
+                            {proposal.commercialDiscount > 0 && (
+                                <React.Fragment>
+                                    <div className="flex justify-between"><span>Subtotal Bruto</span> <span>{formatCurrency(proposal.subtotalBeforeDiscount)}</span></div>
+                                    <div className="flex justify-between text-red-600">
+                                        <span>Desconto Comercial ({proposal.commercialDiscount}%)</span>
+                                        <span>-{formatCurrency(proposal.discountAmount)}</span>
+                                    </div>
+                                </React.Fragment>
+                            )}
+                            <div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div>
+                            <div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div>
+                            <div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div>
+                        </div>
+                    </section>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">4. Detalhe de Horas e Custos</h3><div className="space-y-1"><p><strong>Total de Horas Estimadas:</strong> {proposal.estimatedHours} h</p>{proposal.teamBreakdown && (<> <h4 className="font-semibold pt-2">Horas por Técnico:</h4><ul className="list-disc list-inside pl-2">{Object.entries(proposal.teamBreakdown).map(([role, data]) => (<li key={role}>{role}: {data.hours} h</li>))}</ul> </>)}{proposal.service === 'certificado' && proposal.travelCost > 0 && (<div className="mt-2"><h4 className="font-semibold pt-2">Detalhe de Deslocação:</h4><p>Custo de Deslocação (km): {formatCurrency(proposal.distanceCost)}</p><p>Custo de Estadia ({proposal.travelDays} dias): {formatCurrency(proposal.accommodationCost)}</p></div>)}</div></section>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3><ScheduleGantt schedule={proposal.schedule} startDate={proposal.startDate} /></section>
                     {proposal.service === 'avac' && proposal.totalAvacInstallationCost != null && (
@@ -492,7 +541,26 @@
                     <div className="text-center my-4"><h2 className="text-2xl font-bold text-blue-700">Detalhes da Proposta</h2><p className="text-sm text-gray-500">Ref: {proposal.ref}</p></div>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">1. Dados do Projeto</h3><div className="space-y-1"><p><strong>Cliente:</strong> {proposal.clientName}</p>{proposal.companyName && <p><strong>Empresa:</strong> {proposal.companyName}</p>}<p><strong>Edifício:</strong> {proposal.buildingName}</p><p><strong>Serviço:</strong> <span className="capitalize">{proposal.service.replace('-', ' ')}</span></p><p><strong>Localização:</strong> {proposal.location}</p><p><strong>Tipologia:</strong> {proposal.buildingType}</p><p><strong>Subtipologia:</strong> {proposal.buildingSubtype}</p></div></section>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">2. Áreas e Complexidade</h3><div className="space-y-1"><p><strong>Área Principal:</strong> {proposal.mainArea} m²</p><p><strong>Área Auxiliar:</strong> {proposal.totalAuxArea} m²</p><p><strong>Área Total:</strong> <strong className="text-blue-700">{proposal.mainArea + proposal.totalAuxArea} m²</strong></p><p><strong>Fator de Complexidade:</strong> {proposal.mainComplexity.toFixed(2)}x</p></div>{proposal.selectedAuxSpaces && proposal.selectedAuxSpaces.length > 0 && (<div className="mt-2"><h4 className="font-semibold">Espaços Auxiliares:</h4><ul className="list-disc list-inside pl-2">{proposal.selectedAuxSpaces.map(space => (<li key={space.name}>{space.name}: {space.area} m²</li>))}</ul></div>)}</section>
-                    <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3><div className="bg-gray-100 p-3 rounded-lg space-y-2"><div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div><div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>{proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}<hr /><div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div><div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div><div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div></div></section>
+                    <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3>
+                        <div className="bg-gray-100 p-3 rounded-lg space-y-2">
+                            <div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div>
+                            <div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>
+                            {proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}
+                            <hr />
+                             {proposal.commercialDiscount > 0 && (
+                                <React.Fragment>
+                                    <div className="flex justify-between"><span>Subtotal Bruto</span> <span>{formatCurrency(proposal.subtotalBeforeDiscount)}</span></div>
+                                    <div className="flex justify-between text-red-600">
+                                        <span>Desconto Comercial ({proposal.commercialDiscount}%)</span>
+                                        <span>-{formatCurrency(proposal.discountAmount)}</span>
+                                    </div>
+                                </React.Fragment>
+                            )}
+                            <div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div>
+                            <div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div>
+                            <div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div>
+                        </div>
+                    </section>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">4. Detalhe de Horas e Custos</h3><div className="space-y-1"><p><strong>Total de Horas Estimadas:</strong> {proposal.estimatedHours || 'N/A'} h</p>{proposal.teamBreakdown && (<> <h4 className="font-semibold pt-2">Horas por Técnico:</h4><ul className="list-disc list-inside pl-2">{Object.entries(proposal.teamBreakdown).map(([role, data]) => (<li key={role}>{role}: {data.hours} h</li>))}</ul> </>)}{proposal.service === 'certificado' && proposal.travelCost > 0 && (<div className="mt-2"><h4 className="font-semibold pt-2">Detalhe de Deslocação:</h4><p>Custo de Deslocação (km): {formatCurrency(proposal.distanceCost)}</p><p>Custo de Estadia ({proposal.travelDays} dias): {formatCurrency(proposal.accommodationCost)}</p></div>)}</div></section>
                     <section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3><ScheduleGantt schedule={proposal.schedule} startDate={proposal.startDate} /></section>
                      {proposal.service === 'avac' && proposal.totalAvacInstallationCost != null && (
@@ -583,7 +651,24 @@
                                     </section>
                                 )}
                                 {options.areas && (<section className="my-4"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">2. Áreas e Complexidade</h3><div className="space-y-1"><p><strong>Área Principal:</strong> {proposal.mainArea} m²</p><p><strong>Área Auxiliar:</strong> {proposal.totalAuxArea} m²</p><p><strong>Área Total:</strong> <strong className="text-blue-700">{proposal.mainArea + proposal.totalAuxArea} m²</strong></p><p><strong>Fator de Complexidade:</strong> {proposal.mainComplexity.toFixed(2)}x</p></div>{proposal.selectedAuxSpaces && proposal.selectedAuxSpaces.length > 0 && (<div className="mt-2"><h4 className="font-semibold">Espaços Auxiliares:</h4><ul className="list-disc list-inside pl-2">{proposal.selectedAuxSpaces.map(space => (<li key={space.name}>{space.name}: {space.area} m²</li>))}</ul></div>)}</section>)}
-                                {options.budgetSummary && (<section className="my-4"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3><div className="bg-gray-100 p-3 rounded-lg space-y-2"><div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div><div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>{proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}<hr /><div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div><div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div><div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div></div></section>)}
+                                {options.budgetSummary && (<section className="my-4"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">3. Resumo do Orçamento</h3><div className="bg-gray-100 p-3 rounded-lg space-y-2">
+                                    <div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div>
+                                    <div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>
+                                    {proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}
+                                    <hr />
+                                    {proposal.commercialDiscount > 0 && (
+                                        <React.Fragment>
+                                            <div className="flex justify-between"><span>Subtotal Bruto</span> <span>{formatCurrency(proposal.subtotalBeforeDiscount)}</span></div>
+                                            <div className="flex justify-between text-red-600">
+                                                <span>Desconto Comercial ({proposal.commercialDiscount}%)</span>
+                                                <span>-{formatCurrency(proposal.discountAmount)}</span>
+                                            </div>
+                                        </React.Fragment>
+                                    )}
+                                    <div className="flex justify-between font-bold"><span>Subtotal</span> <span>{formatCurrency(proposal.finalSubtotal)}</span></div>
+                                    <div className="flex justify-between"><span>IVA (23%)</span> <span>{formatCurrency(proposal.vat)}</span></div>
+                                    <div className="flex justify-between font-bold text-xl text-blue-700 mt-2"><span>Total</span> <span>{formatCurrency(proposal.total)}</span></div>
+                                </div></section>)}
                                 {(options.hoursDetails || (options.travelDetails && proposal.service === 'certificado')) && (<section className="my-4"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">4. Detalhe de Horas e Custos</h3>{options.hoursDetails && (<div className="space-y-1"><p><strong>Total de Horas Estimadas:</strong> {proposal.estimatedHours} h</p>{proposal.teamBreakdown && (<> <h4 className="font-semibold pt-2">Horas por Técnico:</h4><ul className="list-disc list-inside pl-2">{Object.entries(proposal.teamBreakdown).map(([role, data]) => (<li key={role}>{role}: {data.hours} h</li>))}</ul> </>)}</div>)}{options.travelDetails && proposal.service === 'certificado' && proposal.travelCost > 0 && (<div className="mt-2"><h4 className="font-semibold pt-2">Detalhe de Deslocação:</h4><p>Custo de Deslocação (km): {formatCurrency(proposal.distanceCost)}</p><p>Custo de Estadia ({proposal.travelDays} dias): {formatCurrency(proposal.accommodationCost)}</p></div>)}</section>)}
                                 {options.schedule && (<section className="my-4 text-sm"><h3 className="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">5. Cronograma</h3><ScheduleGantt schedule={proposal.schedule} startDate={proposal.startDate} /></section>)}
                                 {options.avacEstimate && proposal.service === 'avac' && proposal.totalAvacInstallationCost != null && (
@@ -676,7 +761,10 @@
                 } catch (e) { console.error("Erro ao apagar a proposta: ", e); setNotification("Ocorreu um erro ao apagar a proposta."); setProposalToDelete(null); }
             };
             const handleCopy = async (proposalToCopy, userId) => {
-                if (!userId) { setNotification("Não foi possível identificar o utilizador."); return; }
+                if (!userId) {
+                    setNotification("Não foi possível identificar o utilizador.");
+                    return;
+                }
                 const { id, ref, ...restOfProposal } = proposalToCopy;
                 const year = new Date().getFullYear();
                 const serviceCode = serviceCodes[restOfProposal.service] || 'XXX';
@@ -727,7 +815,22 @@
         };
         const ComparisonView = ({ proposals, setView }) => {
             const formatCurrency = (value) => value ? value.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }) : '€0.00';
-            const fields = [{ label: 'Referência', key: 'ref' }, { label: 'Cliente', key: 'clientName' }, { label: 'Empresa', key: 'companyName' }, { label: 'Edifício', key: 'buildingName' }, { label: 'Serviço', key: 'service', transform: (val) => <span className="capitalize">{val.replace('-', ' ')}</span> }, { label: 'Localização', key: 'location' }, { label: 'Tipologia', key: 'buildingType' }, { label: 'Subtipologia', key: 'buildingSubtype' }, { label: 'Fator de Complexidade', key: 'mainComplexity', transform: (val) => `${val.toFixed(2)}x` }, { label: 'Área Total', key: 'total', transform: (val, p) => `${p.mainArea + p.totalAuxArea} m²` }, { label: 'Horas Totais', key: 'estimatedHours', transform: (val) => `${val} h` }, { label: 'Custo Total', key: 'total', transform: (val) => <span className="font-bold text-blue-700">{formatCurrency(val)}</span> }, { label: '€/m²', key: 'total', transform: (val, p) => { const totalArea = p.mainArea + p.totalAuxArea; return totalArea > 0 ? formatCurrency(p.total / totalArea) : 'N/A'; } },];
+            const fields = [
+                { label: 'Referência', key: 'ref' }, 
+                { label: 'Cliente', key: 'clientName' }, 
+                { label: 'Empresa', key: 'companyName' }, 
+                { label: 'Edifício', key: 'buildingName' }, 
+                { label: 'Serviço', key: 'service', transform: (val) => <span className="capitalize">{val.replace('-', ' ')}</span> }, 
+                { label: 'Localização', key: 'location' }, 
+                { label: 'Tipologia', key: 'buildingType' }, 
+                { label: 'Subtipologia', key: 'buildingSubtype' }, 
+                { label: 'Fator de Complexidade', key: 'mainComplexity', transform: (val) => `${val.toFixed(2)}x` },
+                { label: 'Desconto Comercial', key: 'commercialDiscount', transform: (val) => `${val || 0}%` },
+                { label: 'Área Total', key: 'total', transform: (val, p) => `${p.mainArea + p.totalAuxArea} m²` }, 
+                { label: 'Horas Totais', key: 'estimatedHours', transform: (val) => `${val} h` }, 
+                { label: 'Custo Total', key: 'total', transform: (val) => <span className="font-bold text-blue-700">{formatCurrency(val)}</span> }, 
+                { label: '€/m²', key: 'total', transform: (val, p) => { const totalArea = p.mainArea + p.totalAuxArea; return totalArea > 0 ? formatCurrency(p.total / totalArea) : 'N/A'; } },
+            ];
             return (
                 <div className="p-2 sm:p-4 max-w-md mx-auto bg-white rounded-2xl shadow-lg">
                     <div className="text-center mb-4"><h1 className="text-2xl font-bold text-gray-900">Comparar Propostas</h1></div>
