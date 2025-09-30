@@ -95,6 +95,14 @@
             "Transportes": { "Estação ferroviária": 220, "Estação rodoviária": 210, "Aeroporto": 300, "Interface intermodal": 250, "Parque de estacionamento coberto": 120 },
             "Indústria e Armazéns": { "Indústria ligeira (montagem, embalamento)": 180, "Indústria pesada (metalomecânica, química)": 250, "Armazém logístico": 140, "Câmara frigorífica": 300, "Oficina de manutenção": 170, "Centro de distribuição": 160 }
         };
+        const avacInstallationCostsAux = {
+            "Estacionamento": 60,
+            "Áreas técnicas": 100,
+            "Armazéns": 80,
+            "Oficinas": 90,
+            "Cozinha": 200,
+            "Lavandaria": 150
+        };
         const serviceTasks = {
             avac: [
                 { name: 'Reunião inicial e levantamento de dados', percentage: 0.10, details: ['Análise do programa preliminar e/ou projeto de arquitetura.', 'Visita ao local para levantamento de condicionantes.', 'Recolha de dados de especialidades relevantes.'] },
@@ -213,16 +221,39 @@
             let avacCostBreakdown = null;
 
             if (service === 'avac') {
-                const costPerM2 = avacInstallationCosts[buildingType]?.[buildingSubtype] || 120;
-                const totalAreaForAvac = mainArea + totalAuxArea;
-                totalAvacInstallationCost = costPerM2 * totalAreaForAvac;
-                 avacCostBreakdown = [{
-                    typology: buildingType,
-                    subTypology: buildingSubtype,
-                    area: totalAreaForAvac,
-                    costPerM2: costPerM2,
-                    totalCost: totalAvacInstallationCost
-                }];
+                avacCostBreakdown = [];
+                
+                // Custo da área principal
+                const costPerM2Main = avacInstallationCosts[buildingType]?.[buildingSubtype] || 120;
+                const mainInstallationCost = costPerM2Main * mainArea;
+                if (mainArea > 0) {
+                    avacCostBreakdown.push({
+                        typology: buildingType,
+                        subTypology: buildingSubtype,
+                        area: mainArea,
+                        costPerM2: costPerM2Main,
+                        totalCost: mainInstallationCost
+                    });
+                }
+
+                // Custo das áreas auxiliares
+                const auxInstallationCostsDetails = selectedAuxSpaces.map(space => {
+                    const costPerM2Aux = avacInstallationCostsAux[space.name] || 70; // Default de 70 para espaços não mapeados
+                    const auxSpaceCost = costPerM2Aux * space.area;
+                    if (space.area > 0) {
+                        avacCostBreakdown.push({
+                            typology: 'Área Auxiliar',
+                            subTypology: space.name,
+                            area: space.area,
+                            costPerM2: costPerM2Aux,
+                            totalCost: auxSpaceCost
+                        });
+                    }
+                    return auxSpaceCost;
+                });
+                
+                const totalAuxInstallationCost = auxInstallationCostsDetails.reduce((acc, cost) => acc + cost, 0);
+                totalAvacInstallationCost = mainInstallationCost + totalAuxInstallationCost;
 
                 if (totalAvacInstallationCost > 0) {
                     projectToWorkRatio = (finalSubtotal / totalAvacInstallationCost) * 100;
