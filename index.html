@@ -150,7 +150,7 @@
         };
 
         const calculateQuote = (formData) => {
-            const { service, location, buildingType, buildingSubtype, mainArea, auxSpaces, factorK2000, commercialDiscount = 0 } = formData;
+            const { service, location, buildingType, buildingSubtype, mainArea, auxSpaces, factorK2000, commercialDiscount = 0, additionalCosts = [] } = formData;
             const baseComplexity = data.buildingTypes[buildingType][buildingSubtype];
             const mainComplexity = baseComplexity * factorK2000;
             const mainCostResult = calculateCostMain(service, mainArea, mainComplexity);
@@ -177,7 +177,10 @@
                 accommodationCost = travelDays * 350;
                 travelCost = distanceCost + accommodationCost;
             }
-            const subtotalBeforeDiscount = mainCost + auxCost + travelCost;
+
+            const additionalCostsTotal = additionalCosts.reduce((acc, cost) => acc + (cost.value || 0), 0);
+
+            const subtotalBeforeDiscount = mainCost + auxCost + travelCost + additionalCostsTotal;
             const discountAmount = subtotalBeforeDiscount * (commercialDiscount / 100);
             const subtotalAfterDiscount = subtotalBeforeDiscount - discountAmount;
 
@@ -230,7 +233,7 @@
                 ...formData, 
                 mainComplexity, mainCost, auxCost, totalAuxArea, selectedAuxSpaces, 
                 travelCost, travelDays, distanceCost, accommodationCost, 
-                subtotalBeforeDiscount, discountAmount, commercialDiscount,
+                subtotalBeforeDiscount, discountAmount, commercialDiscount, additionalCosts,
                 finalSubtotal, vat, total, 
                 estimatedHours, teamBreakdown, schedule, 
                 totalAvacInstallationCost, avacCostBreakdown, projectToWorkRatio, 
@@ -334,7 +337,7 @@
             </div>
         );
 
-        const defaultFormData = { clientName: '', companyName: '', buildingName: '', service: 'avac', location: 'Lisboa', buildingType: 'Comércio', buildingSubtype: 'Loja de rua', mainArea: 500, auxSpaces: {}, factorK2000: 1.0, commercialDiscount: 0 };
+        const defaultFormData = { clientName: '', companyName: '', buildingName: '', service: 'avac', location: 'Lisboa', buildingType: 'Comércio', buildingSubtype: 'Loja de rua', mainArea: 500, auxSpaces: {}, factorK2000: 1.0, commercialDiscount: 0, additionalCosts: [] };
 
         const CalculatorForm = ({ onCalculate, setView, editingProposal, clearEditing, setNotification }) => {
             const [formData, setFormData] = useState(defaultFormData);
@@ -375,6 +378,25 @@
             };
 
             const handleAuxSliderChange = (spaceName, value) => { setFormData(prev => ({ ...prev, auxSpaces: { ...prev.auxSpaces, [spaceName]: parseInt(value) || 10 } })); };
+            
+            const handleAddCost = () => {
+                setFormData(prev => ({
+                    ...prev,
+                    additionalCosts: [...(prev.additionalCosts || []), { id: Date.now(), description: '', value: 0 }]
+                }));
+            };
+
+            const handleCostChange = (index, field, value) => {
+                const newCosts = [...formData.additionalCosts];
+                newCosts[index][field] = value;
+                setFormData(prev => ({ ...prev, additionalCosts: newCosts }));
+            };
+
+            const handleRemoveCost = (index) => {
+                const newCosts = formData.additionalCosts.filter((_, i) => i !== index);
+                setFormData(prev => ({ ...prev, additionalCosts: newCosts }));
+            };
+
             const handleSubmit = (e) => {
                 e.preventDefault();
                 if (!formData.clientName || !formData.buildingName) { setError('Por favor, preencha o nome do cliente e do edifício.'); return; }
@@ -413,6 +435,35 @@
                                     {Number(formData.commercialDiscount || 0).toFixed(0)} %
                                 </span>
                             </div>
+                        </fieldset>
+                        <fieldset>
+                            <legend className="text-lg font-semibold text-gray-800 mb-2">9. Custos Adicionais</legend>
+                            <div className="space-y-2">
+                                {formData.additionalCosts && formData.additionalCosts.map((cost, index) => (
+                                    <div key={cost.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                                        <input
+                                            type="text"
+                                            placeholder="Descrição do custo"
+                                            value={cost.description}
+                                            onChange={(e) => handleCostChange(index, 'description', e.target.value)}
+                                            className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                                        />
+                                        <input
+                                            type="number"
+                                            placeholder="Valor"
+                                            value={cost.value}
+                                            onChange={(e) => handleCostChange(index, 'value', parseFloat(e.target.value) || 0)}
+                                            className="w-32 p-2 border border-gray-300 rounded-lg text-sm text-right"
+                                        />
+                                        <button type="button" onClick={() => handleRemoveCost(index)} className="text-red-500 hover:text-red-700 font-bold text-xl px-2">
+                                            &times;
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                            <button type="button" onClick={handleAddCost} className="mt-3 text-sm text-blue-600 font-semibold p-2 w-full border-2 border-dashed rounded-lg hover:bg-blue-50">
+                                + Adicionar Custo
+                            </button>
                         </fieldset>
                         <div className="pt-4 flex flex-col gap-2"><button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-all">{editingProposal ? 'Atualizar e Ver Proposta' : 'Calcular Orçamento'}</button><button type="button" onClick={handleCancel} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all">Cancelar</button></div>
                     </form>
@@ -496,6 +547,21 @@
                             <div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div>
                             <div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>
                             {proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}
+                            
+                            {proposal.additionalCosts && proposal.additionalCosts.filter(c => c.value > 0).length > 0 && (
+                                <React.Fragment>
+                                    <hr />
+                                    {proposal.additionalCosts.map((cost) => (
+                                        cost.description && cost.value > 0 && (
+                                            <div key={cost.id} className="flex justify-between">
+                                                <span>{cost.description}</span>
+                                                <span>{formatCurrency(cost.value)}</span>
+                                            </div>
+                                        )
+                                    ))}
+                                </React.Fragment>
+                            )}
+
                             <hr />
                             {proposal.commercialDiscount > 0 && (
                                 <React.Fragment>
@@ -546,6 +612,19 @@
                             <div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div>
                             <div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>
                             {proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}
+                             {proposal.additionalCosts && proposal.additionalCosts.filter(c => c.value > 0).length > 0 && (
+                                <React.Fragment>
+                                    <hr />
+                                    {proposal.additionalCosts.map((cost) => (
+                                        cost.description && cost.value > 0 && (
+                                            <div key={cost.id} className="flex justify-between">
+                                                <span>{cost.description}</span>
+                                                <span>{formatCurrency(cost.value)}</span>
+                                            </div>
+                                        )
+                                    ))}
+                                </React.Fragment>
+                            )}
                             <hr />
                              {proposal.commercialDiscount > 0 && (
                                 <React.Fragment>
@@ -655,6 +734,19 @@
                                     <div className="flex justify-between"><span>Custo Base (Principal)</span> <span>{formatCurrency(proposal.mainCost)}</span></div>
                                     <div className="flex justify-between"><span>Custo Base (Auxiliar)</span> <span>{formatCurrency(proposal.auxCost)}</span></div>
                                     {proposal.travelCost > 0 && <div className="flex justify-between"><span>Deslocação e Estadia</span> <span>{formatCurrency(proposal.travelCost)}</span></div>}
+                                    {proposal.additionalCosts && proposal.additionalCosts.filter(c => c.value > 0).length > 0 && (
+                                        <React.Fragment>
+                                            <hr />
+                                            {proposal.additionalCosts.map((cost) => (
+                                                cost.description && cost.value > 0 && (
+                                                    <div key={cost.id} className="flex justify-between">
+                                                        <span>{cost.description}</span>
+                                                        <span>{formatCurrency(cost.value)}</span>
+                                                    </div>
+                                                )
+                                            ))}
+                                        </React.Fragment>
+                                    )}
                                     <hr />
                                     {proposal.commercialDiscount > 0 && (
                                         <React.Fragment>
@@ -738,16 +830,22 @@
         const ProposalList = ({ proposals, setView, setEditingProposal, setNotification, isGuest }) => {
             const [selected, setSelected] = useState([]); const [proposalToDelete, setProposalToDelete] = useState(null); const [proposalToPrint, setProposalToPrint] = useState(null); const [showSummary, setShowSummary] = useState(false); const [selectedProposalForAction, setSelectedProposalForAction] = useState(null); const [showFilters, setShowFilters] = useState(false);
             const [filters, setFilters] = useState({ service: '', companyName: '', dateFrom: '', dateTo: '', minTotal: '', maxTotal: '' });
-            const companyNames = useMemo(() => { const names = proposals.map(p => p.companyName).filter(name => name); return [...new Set(names)].sort(); }, [proposals]);
+
+            const sortedProposals = useMemo(() => 
+                [...proposals].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)), 
+            [proposals]);
+
+            const companyNames = useMemo(() => { const names = sortedProposals.map(p => p.companyName).filter(name => name); return [...new Set(names)].sort(); }, [sortedProposals]);
             const handleFilterChange = (e) => { const { name, value } = e.target; setFilters(prev => ({ ...prev, [name]: value })); };
             const clearFilters = () => { setFilters({ service: '', companyName: '', dateFrom: '', dateTo: '', minTotal: '', maxTotal: '' }); };
-            const filteredProposals = proposals.filter(p => {
+            const filteredProposals = useMemo(() => sortedProposals.filter(p => {
                 const proposalDate = new Date(p.timestamp); const dateFrom = filters.dateFrom ? new Date(filters.dateFrom) : null; const dateTo = filters.dateTo ? new Date(filters.dateTo) : null;
                 if (dateFrom) dateFrom.setHours(0, 0, 0, 0); if (dateTo) dateTo.setHours(23, 59, 59, 999);
                 return ((filters.service === '' || p.service === filters.service) && (filters.companyName === '' || p.companyName === filters.companyName) && (!dateFrom || proposalDate >= dateFrom) && (!dateTo || proposalDate <= dateTo) && (filters.minTotal === '' || p.total >= parseFloat(filters.minTotal)) && (filters.maxTotal === '' || p.total <= parseFloat(filters.maxTotal)));
-            });
+            }), [sortedProposals, filters]);
+
             const handleSelect = (id) => { setSelected(prev => prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]); };
-            const handleCompare = () => { const toCompare = proposals.filter(p => selected.includes(p.id)); setView('compare', toCompare); };
+            const handleCompare = () => { const toCompare = sortedProposals.filter(p => selected.includes(p.id)); setView('compare', toCompare); };
             const handleEdit = (proposal) => { setEditingProposal(proposal); setView('calculator'); };
             const handleView = (proposal) => { setView('viewDetails', proposal); };
             const handlePrint = (proposal) => { setProposalToPrint(proposal); };
@@ -793,7 +891,7 @@
                     <div className="p-4 max-w-md mx-auto bg-white rounded-2xl shadow-lg">
                         <div className="text-center mb-4"><h1 className="text-2xl font-bold text-gray-900">{showSummary ? 'Lista Resumida de Orçamentos' : 'Propostas Guardadas'}</h1></div>
                         {!showSummary && (<div className="mb-4"><button onClick={() => setShowFilters(!showFilters)} className="w-full text-sm bg-gray-100 p-2 rounded-lg">{showFilters ? 'Ocultar Filtros' : 'Mostrar Filtros'}</button>{showFilters && (<div className="p-3 bg-gray-50 rounded-b-lg text-sm space-y-3 mt-1"><select name="service" value={filters.service} onChange={handleFilterChange} className="w-full p-2 border rounded-lg"><option value="">Todos os Serviços</option>{Object.keys(serviceCodes).map(s => <option key={s} value={s} className="capitalize">{s.replace('-', ' ')}</option>)}</select><select name="companyName" value={filters.companyName} onChange={handleFilterChange} className="w-full p-2 border rounded-lg"><option value="">Todas as Empresas</option>{companyNames.map(name => <option key={name} value={name}>{name}</option>)}</select><div className="grid grid-cols-2 gap-2"><input type="date" name="dateFrom" value={filters.dateFrom} onChange={handleFilterChange} className="w-full p-2 border rounded-lg" /><input type="date" name="dateTo" value={filters.dateTo} onChange={handleFilterChange} className="w-full p-2 border rounded-lg" /></div><div className="grid grid-cols-2 gap-2"><input type="number" name="minTotal" placeholder="Valor Mín." value={filters.minTotal} onChange={handleFilterChange} className="w-full p-2 border rounded-lg" /><input type="number" name="maxTotal" placeholder="Valor Máx." value={filters.maxTotal} onChange={handleFilterChange} className="w-full p-2 border rounded-lg" /></div><button onClick={clearFilters} className="w-full text-xs text-gray-600 hover:text-blue-600 p-1">Limpar Filtros</button></div>)}</div>)}
-                        <div className="space-y-3 max-h-96 overflow-y-auto pr-2">{proposals.length === 0 ? (<p className="text-center text-gray-500 py-8">Nenhuma proposta guardada.</p>) : !showSummary ? (filteredProposals.length === 0 ? (<p className="text-center text-gray-500 py-8">Nenhuma proposta encontrada com os filtros atuais.</p>) : (filteredProposals.map(p => (<div key={p.id} className={`p-3 border rounded-lg transition-all relative ${selected.includes(p.id) ? 'bg-blue-50 border-blue-600 ring-2 ring-blue-300' : 'hover:bg-gray-50'}`}><div className="flex justify-between items-start"><div className="flex-grow cursor-pointer" onClick={() => handleSelect(p.id)}><p className="font-bold">{p.ref || p.id.slice(0, 8)} - {p.buildingName}</p><p className="text-sm text-gray-700">{p.clientName}</p><p className="text-xs text-gray-500 capitalize">{p.service.replace('-', ' ')} - {p.buildingType}</p><p className="text-xs text-gray-500">{p.location} - {new Date(p.timestamp).toLocaleDateString('pt-PT')}</p></div><div className="text-right flex-shrink-0 ml-2"><p className="font-bold text-blue-700">{formatCurrency(p.total)}</p><div className="flex flex-col items-end gap-1 mt-1"><div className="flex gap-1 flex-wrap justify-end"><button onClick={() => handleView(p)} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded hover:bg-green-200">Ver</button><button onClick={() => handlePrint(p)} className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded hover:bg-purple-200">Imprimir</button><button onClick={() => handleCopy(p, auth.currentUser.uid)} className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded hover:bg-yellow-200">Copiar</button><button onClick={() => handleEdit(p)} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded hover:bg-blue-200">Editar</button><button onClick={() => setProposalToDelete(p.id)} className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded hover:bg-red-200">Apagar</button></div></div></div></div>{proposalToDelete === p.id && (<div className="absolute inset-0 bg-red-500 bg-opacity-90 flex flex-col items-center justify-center rounded-lg p-4"><p className="text-white font-bold text-center mb-4">Tem a certeza que quer apagar esta proposta?</p><div className="flex gap-4"><button onClick={() => confirmDelete(auth.currentUser.uid)} className="bg-white text-red-600 font-bold px-4 py-1 rounded">Confirmar</button><button onClick={() => setProposalToDelete(null)} className="bg-transparent border border-white text-white font-bold px-4 py-1 rounded">Cancelar</button></div></div>)}</div>)))) : (proposals.length === 0 ? (<p className="text-center text-gray-500 py-8">Nenhuma proposta guardada.</p>) : (proposals.map(p => (
+                        <div className="space-y-3 max-h-96 overflow-y-auto pr-2">{sortedProposals.length === 0 ? (<p className="text-center text-gray-500 py-8">Nenhuma proposta guardada.</p>) : !showSummary ? (filteredProposals.length === 0 ? (<p className="text-center text-gray-500 py-8">Nenhuma proposta encontrada com os filtros atuais.</p>) : (filteredProposals.map(p => (<div key={p.id} className={`p-3 border rounded-lg transition-all relative ${selected.includes(p.id) ? 'bg-blue-50 border-blue-600 ring-2 ring-blue-300' : 'hover:bg-gray-50'}`}><div className="flex justify-between items-start"><div className="flex-grow cursor-pointer" onClick={() => handleSelect(p.id)}><p className="font-bold">{p.ref || p.id.slice(0, 8)} - {p.buildingName}</p><p className="text-sm text-gray-700">{p.clientName}</p><p className="text-xs text-gray-500 capitalize">{p.service.replace('-', ' ')} - {p.buildingType}</p><p className="text-xs text-gray-500">{p.location} - {new Date(p.timestamp).toLocaleDateString('pt-PT')}</p></div><div className="text-right flex-shrink-0 ml-2"><p className="font-bold text-blue-700">{formatCurrency(p.total)}</p><div className="flex flex-col items-end gap-1 mt-1"><div className="flex gap-1 flex-wrap justify-end"><button onClick={() => handleView(p)} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded hover:bg-green-200">Ver</button><button onClick={() => handlePrint(p)} className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded hover:bg-purple-200">Imprimir</button><button onClick={() => handleCopy(p, auth.currentUser.uid)} className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded hover:bg-yellow-200">Copiar</button><button onClick={() => handleEdit(p)} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded hover:bg-blue-200">Editar</button><button onClick={() => setProposalToDelete(p.id)} className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded hover:bg-red-200">Apagar</button></div></div></div></div>{proposalToDelete === p.id && (<div className="absolute inset-0 bg-red-500 bg-opacity-90 flex flex-col items-center justify-center rounded-lg p-4"><p className="text-white font-bold text-center mb-4">Tem a certeza que quer apagar esta proposta?</p><div className="flex gap-4"><button onClick={() => confirmDelete(auth.currentUser.uid)} className="bg-white text-red-600 font-bold px-4 py-1 rounded">Confirmar</button><button onClick={() => setProposalToDelete(null)} className="bg-transparent border border-white text-white font-bold px-4 py-1 rounded">Cancelar</button></div></div>)}</div>)))) : (sortedProposals.length === 0 ? (<p className="text-center text-gray-500 py-8">Nenhuma proposta guardada.</p>) : (sortedProposals.map(p => (
                         <div key={p.id} className="border-b py-2 px-1 cursor-pointer hover:bg-gray-100 rounded" onClick={() => setSelectedProposalForAction(p)}>
                             <div className="flex justify-between text-xs text-gray-600">
                                 <span>{new Date(p.timestamp).toLocaleDateString('pt-PT')}</span>
@@ -853,23 +951,49 @@
         const DashboardView = ({ setView, proposals }) => {
             const formatCurrency = (value) => value ? value.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' }) : '€0.00';
             const stats = useMemo(() => {
-                if (!proposals || proposals.length === 0) { return { totalFaturado: 0, totalPropostas: 0, mediaProposta: 0, totalHoras: 0 }; }
-                const totalFaturado = proposals.reduce((acc, p) => acc + p.total, 0); const totalPropostas = proposals.length; const mediaProposta = totalFaturado / totalPropostas; const totalHoras = proposals.reduce((acc, p) => acc + p.estimatedHours, 0);
-                return { totalFaturado, totalPropostas, mediaProposta, totalHoras };
+                if (!proposals || proposals.length === 0) { return { totalFaturado: 0, totalPropostas: 0, mediaProposta: 0, totalHoras: 0, totalArea: 0 }; }
+                const totalFaturado = proposals.reduce((acc, p) => acc + p.total, 0); 
+                const totalPropostas = proposals.length; 
+                const mediaProposta = totalFaturado / totalPropostas; 
+                const totalHoras = proposals.reduce((acc, p) => acc + p.estimatedHours, 0);
+                const totalArea = proposals.reduce((acc, p) => acc + (p.mainArea || 0) + (p.totalAuxArea || 0), 0);
+                return { totalFaturado, totalPropostas, mediaProposta, totalHoras, totalArea };
             }, [proposals]);
+
             const processData = (key, value) => { return proposals.reduce((acc, p) => { const groupKey = p[key] || 'N/A'; if (!acc[groupKey]) { acc[groupKey] = 0; } acc[groupKey] += p[value]; return acc; }, {}); };
             const processDataByYear = (value) => { return proposals.reduce((acc, p) => { const year = new Date(p.timestamp).getFullYear(); if (!acc[year]) { acc[year] = 0; } acc[year] += p[value]; return acc; }, {}); };
+            
             const chartData = useMemo(() => {
                 const dataToChart = (data, labelKey, dataKey) => Object.entries(data).map(([key, value]) => ({ [labelKey]: key, [dataKey]: value })).sort((a, b) => b[dataKey] - a[dataKey]);
-                const valorPorAno = dataToChart(processDataByYear('total'), 'ano', 'valor'); const horasPorAno = dataToChart(processDataByYear('estimatedHours'), 'ano', 'horas');
-                const valorPorServico = dataToChart(processData('service', 'total'), 'servico', 'valor'); const horasPorServico = dataToChart(processData('service', 'estimatedHours'), 'servico', 'horas');
-                const valorPorCliente = dataToChart(processData('clientName', 'total'), 'cliente', 'valor').slice(0, 5); const horasPorCliente = dataToChart(processData('clientName', 'estimatedHours'), 'cliente', 'horas').slice(0, 5);
-                return { valorPorAno, horasPorAno, valorPorServico, horasPorServico, valorPorCliente, horasPorCliente };
+                const valorPorAno = dataToChart(processDataByYear('total'), 'ano', 'valor'); 
+                const horasPorAno = dataToChart(processDataByYear('estimatedHours'), 'ano', 'horas');
+                const valorPorServico = dataToChart(processData('service', 'total'), 'servico', 'valor'); 
+                const horasPorServico = dataToChart(processData('service', 'estimatedHours'), 'servico', 'horas');
+                const valorPorCliente = dataToChart(processData('clientName', 'total'), 'cliente', 'valor').slice(0, 5);
+                const valorPorEmpresa = dataToChart(processData('companyName', 'total'), 'empresa', 'valor').slice(0, 5);
+                return { valorPorAno, horasPorAno, valorPorServico, horasPorServico, valorPorCliente, valorPorEmpresa };
             }, [proposals]);
+
             return (
                 <div className="p-2">
                     <div className="text-center mb-4"><h1 className="text-2xl font-bold text-gray-900">Dashboard</h1></div>
-                    {proposals.length === 0 ? (<div className="text-center text-gray-500 py-16 bg-white rounded-xl shadow"><p>Não existem propostas para apresentar dados.</p><p className="mt-2 text-sm">Crie uma nova proposta para começar a ver as estatísticas.</p></div>) : (<div className="space-y-4"><div className="grid grid-cols-2 gap-4 text-center"><div className="bg-white p-4 rounded-xl shadow"><h3 className="text-sm text-gray-500">Total Faturado</h3><p className="text-2xl font-bold text-blue-600">{formatCurrency(stats.totalFaturado)}</p></div><div className="bg-white p-4 rounded-xl shadow"><h3 className="text-sm text-gray-500">Nº Propostas</h3><p className="text-2xl font-bold text-blue-600">{stats.totalPropostas}</p></div><div className="bg-white p-4 rounded-xl shadow"><h3 className="text-sm text-gray-500">Média / Proposta</h3><p className="text-2xl font-bold text-blue-600">{formatCurrency(stats.mediaProposta)}</p></div><div className="bg-white p-4 rounded-xl shadow"><h3 className="text-sm text-gray-500">Total Horas</h3><p className="text-2xl font-bold text-blue-600">{stats.totalHoras.toLocaleString('pt-PT')} h</p></div></div><BarChart title="Faturação por Ano" data={chartData.valorPorAno} labelKey="ano" dataKey="valor" unit="€" color="bg-green-500" /><BarChart title="Horas por Ano" data={chartData.horasPorAno} labelKey="ano" dataKey="horas" unit="h" color="bg-green-500" /><BarChart title="Faturação por Serviço" data={chartData.valorPorServico} labelKey="servico" dataKey="valor" unit="€" color="bg-indigo-500" /><BarChart title="Horas por Serviço" data={chartData.horasPorServico} labelKey="servico" dataKey="horas" unit="h" color="bg-indigo-500" /><BarChart title="Top 5 Clientes (Faturação)" data={chartData.valorPorCliente} labelKey="cliente" dataKey="valor" unit="€" color="bg-amber-500" /><BarChart title="Top 5 Clientes (Horas)" data={chartData.horasPorCliente} labelKey="cliente" dataKey="horas" unit="h" color="bg-amber-500" /></div>)}
+                    {proposals.length === 0 ? (<div className="text-center text-gray-500 py-16 bg-white rounded-xl shadow"><p>Não existem propostas para apresentar dados.</p><p className="mt-2 text-sm">Crie uma nova proposta para começar a ver as estatísticas.</p></div>) : (
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4 text-center">
+                            <div className="bg-white p-4 rounded-xl shadow"><h3 className="text-sm text-gray-500">Total Faturado</h3><p className="text-2xl font-bold text-blue-600">{formatCurrency(stats.totalFaturado)}</p></div>
+                            <div className="bg-white p-4 rounded-xl shadow"><h3 className="text-sm text-gray-500">Nº Propostas</h3><p className="text-2xl font-bold text-blue-600">{stats.totalPropostas}</p></div>
+                            <div className="bg-white p-4 rounded-xl shadow"><h3 className="text-sm text-gray-500">Média / Proposta</h3><p className="text-2xl font-bold text-blue-600">{formatCurrency(stats.mediaProposta)}</p></div>
+                            <div className="bg-white p-4 rounded-xl shadow"><h3 className="text-sm text-gray-500">Total Horas</h3><p className="text-2xl font-bold text-blue-600">{stats.totalHoras.toLocaleString('pt-PT')} h</p></div>
+                            <div className="bg-white p-4 rounded-xl shadow col-span-2"><h3 className="text-sm text-gray-500">Área Total Orçamentada</h3><p className="text-2xl font-bold text-blue-600">{stats.totalArea.toLocaleString('pt-PT')} m²</p></div>
+                        </div>
+                        <BarChart title="Faturação por Ano" data={chartData.valorPorAno} labelKey="ano" dataKey="valor" unit="€" color="bg-green-500" />
+                        <BarChart title="Horas por Ano" data={chartData.horasPorAno} labelKey="ano" dataKey="horas" unit="h" color="bg-green-500" />
+                        <BarChart title="Faturação por Serviço" data={chartData.valorPorServico} labelKey="servico" dataKey="valor" unit="€" color="bg-indigo-500" />
+                        <BarChart title="Horas por Serviço" data={chartData.horasPorServico} labelKey="servico" dataKey="horas" unit="h" color="bg-indigo-500" />
+                        <BarChart title="Top 5 Clientes (Faturação)" data={chartData.valorPorCliente} labelKey="cliente" dataKey="valor" unit="€" color="bg-amber-500" />
+                        <BarChart title="Top 5 Empresas (Faturação)" data={chartData.valorPorEmpresa} labelKey="empresa" dataKey="valor" unit="€" color="bg-cyan-500" />
+                    </div>
+                    )}
                     <div className="pt-4 mt-2"><button onClick={() => setView('menu')} className="w-full bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-lg hover:bg-gray-300 transition-all">Voltar ao Menu</button></div>
                 </div>
             );
